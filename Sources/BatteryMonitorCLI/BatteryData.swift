@@ -109,19 +109,13 @@ struct BatteryData: Sendable {
 
     // Computed
     var batteryPercentage: Int {
-        // First try to use appleRawMaxCapacity (FCC in mAh) if available
-        if appleRawMaxCapacity > 0 && currentCapacity > 0 {
-            return min(100, Int((Double(currentCapacity) / Double(appleRawMaxCapacity)) * 100))
-        }
-
         // If maxCapacity is already a percentage (0-100), use it directly
         if maxCapacity > 0 && maxCapacity <= 100 {
             return maxCapacity
         }
-
-        // Otherwise calculate from currentCapacity and maxCapacity (both in mAh)
+        // Otherwise calculate from currentCapacity and maxCapacity
         guard maxCapacity > 0 else { return 0 }
-        return min(100, Int((Double(currentCapacity) / Double(maxCapacity)) * 100))
+        return Int((Double(currentCapacity) / Double(maxCapacity)) * 100)
     }
 
     // Get the actual FCC (Full Charge Capacity) in mAh

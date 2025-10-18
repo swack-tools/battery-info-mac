@@ -10,20 +10,39 @@ let package = Package(
         .executable(
             name: "BatteryMonitor",
             targets: ["BatteryMonitor"]
+        ),
+        .executable(
+            name: "BatteryMonitorCLI",
+            targets: ["BatteryMonitorCLI"]
         )
     ],
     targets: [
+        // GUI Menu Bar App
         .executableTarget(
             name: "BatteryMonitor",
             dependencies: [],
+            exclude: ["main_cli.swift"],
+            swiftSettings: [
+                .unsafeFlags(["-parse-as-library"])
+            ],
+            linkerSettings: [
+                .linkedFramework("IOKit"),
+                .linkedFramework("AppKit"),
+                .linkedFramework("SwiftUI")
+            ]
+        ),
+        // CLI Tool
+        .executableTarget(
+            name: "BatteryMonitorCLI",
+            dependencies: [],
+            path: "Sources/BatteryMonitorCLI",
             swiftSettings: [
                 .unsafeFlags(["-parse-as-library"])
             ],
             linkerSettings: [
                 .linkedFramework("IOKit"),
                 .linkedFramework("AppKit")
-            ],
-            plugins: []
+            ]
         )
     ]
 )
