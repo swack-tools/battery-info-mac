@@ -1,10 +1,27 @@
 # BatteryMonitor for macOS
 
-A comprehensive, native Swift command-line tool for monitoring battery health, charging status, and USB-C Power Delivery on Apple Silicon and Intel Macs.
+A comprehensive macOS battery monitoring tool available as both a **menu bar app** and **command-line tool**, providing detailed battery health, charging status, and USB-C Power Delivery information for Apple Silicon and Intel Macs.
 
 [![Platform](https://img.shields.io/badge/platform-macOS%2011%2B-lightgrey.svg)]()
 [![Swift](https://img.shields.io/badge/swift-5.5%2B-orange.svg)]()
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)]()
+
+---
+
+## 🎯 Two Ways to Use
+
+### 1. Menu Bar App (GUI) 🖥️
+- Lives in your macOS menu bar
+- Shows battery percentage and charging status at a glance
+- Click for detailed popup with all metrics
+- Auto-refreshes every 30 seconds
+- Beautiful SwiftUI interface
+
+### 2. Command-Line Tool (CLI) ⌨️
+- Run from Terminal for detailed diagnostics
+- Perfect for scripting and automation
+- Complete feature parity with Python version
+- Fast, native Swift performance
 
 ---
 
@@ -50,17 +67,30 @@ A comprehensive, native Swift command-line tool for monitoring battery health, c
 
 ## Quick Start
 
+### Menu Bar App
+
 ```bash
 # Clone and build
-git clone https://github.com/yourusername/BatteryMonitor.git
-cd BatteryMonitor
-swift build -c release
+git clone https://github.com/swackhamer/mac-battery-info-swift.git
+cd mac-battery-info-swift
+swift build -c release --product BatteryMonitor
 
-# Run
-.build/release/BatteryMonitor
+# Run the menu bar app
+open .build/release/BatteryMonitor
+# The app will appear in your menu bar showing battery percentage
+```
 
-# Or with full power metrics (sudo)
-sudo .build/release/BatteryMonitor
+### Command-Line Tool
+
+```bash
+# Build the CLI tool
+swift build -c release --product BatteryMonitorCLI
+
+# Run with basic info
+.build/release/BatteryMonitorCLI
+
+# Run with full power metrics (requires sudo)
+sudo .build/release/BatteryMonitorCLI
 ```
 
 ---
@@ -173,17 +203,20 @@ Cycle Count:           Excellent (very low) (69 cycles)
 xcode-select --install
 
 # Clone the repository
-git clone https://github.com/yourusername/BatteryMonitor.git
-cd BatteryMonitor
+git clone https://github.com/swackhamer/mac-battery-info-swift.git
+cd mac-battery-info-swift
 
-# Build release version
+# Build both versions
 swift build -c release
 
-# Run the binary
-.build/release/BatteryMonitor
+# Run the menu bar app
+open .build/release/BatteryMonitor
 
-# Optional: Install to /usr/local/bin
-sudo cp .build/release/BatteryMonitor /usr/local/bin/
+# Run the CLI tool
+.build/release/BatteryMonitorCLI
+
+# Optional: Install CLI to /usr/local/bin
+sudo cp .build/release/BatteryMonitorCLI /usr/local/bin/battery-monitor
 ```
 
 ### Build with Xcode
@@ -202,14 +235,35 @@ Then build and run from Xcode (⌘R).
 
 ## Usage
 
-### Basic Usage
+### Menu Bar App
 
 ```bash
-# Run without sudo (most features)
-.build/release/BatteryMonitor
+# Run the GUI menu bar app
+open .build/release/BatteryMonitor
 
-# Run with sudo (full power metrics)
-sudo .build/release/BatteryMonitor
+# The app will:
+# - Display battery percentage in your menu bar
+# - Show ⚡ when charging, 🔌 when plugged in
+# - Auto-refresh every 30 seconds
+# - Click to see detailed popover with all metrics
+# - Quit from the popover menu
+```
+
+The menu bar app provides:
+- Battery status summary (percentage, charging state)
+- Battery health details
+- Charger/power source information
+- USB-C PD contract details
+- Quick actions (open Settings, quit app)
+
+### Command-Line Tool
+
+```bash
+# Run CLI without sudo (most features)
+.build/release/BatteryMonitorCLI
+
+# Run CLI with sudo (full power metrics)
+sudo .build/release/BatteryMonitorCLI
 ```
 
 ### What Works Without Sudo
@@ -218,7 +272,7 @@ All features work without sudo except:
 - Detailed power breakdown (CPU/GPU/ANE/DRAM power from `powermetrics`)
 - Thermal pressure monitoring
 
-### What Requires Sudo
+### What Requires Sudo (CLI only)
 
 - Real-time component power (CPU, GPU, ANE, DRAM)
 - Thermal pressure state
@@ -246,14 +300,21 @@ The tool gathers data from multiple macOS frameworks and utilities:
 ### Project Structure
 
 ```
-Sources/BatteryMonitor/
-├── main.swift                 # Entry point, display formatting
-├── BatteryData.swift          # Data models and structures
-├── IOKitBattery.swift         # IOKit battery data extraction
-├── USBCPDExtension.swift      # USB-C Power Delivery parsing
-├── SystemCommands.swift       # system_profiler & pmset wrappers
-├── SystemInfoExtended.swift   # Display, USB, power management
-└── BatteryDecoders.swift      # Human-readable hex decoders
+Sources/
+├── BatteryMonitor/               # GUI Menu Bar App
+│   ├── BatteryMenuBarApp.swift  # Menu bar app entry point
+│   ├── BatteryDetailView.swift  # SwiftUI popover interface
+│   ├── BatteryDisplayInfo.swift # Simplified display data model
+│   ├── BatteryData.swift        # Shared data models
+│   ├── IOKitBattery.swift       # IOKit battery data extraction
+│   ├── USBCPDExtension.swift    # USB-C Power Delivery parsing
+│   ├── SystemCommands.swift     # system_profiler & pmset
+│   ├── SystemInfoExtended.swift # Display, USB, power management
+│   └── BatteryDecoders.swift    # Human-readable hex decoders
+│
+└── BatteryMonitorCLI/            # CLI Tool
+    ├── main.swift                # CLI entry point & formatting
+    └── [shared Swift files]      # Same as menu bar app
 ```
 
 ### Key Technical Details
@@ -283,45 +344,56 @@ This Swift implementation achieves **100% feature parity** with the Python `powe
 
 ### Advantages of Swift Version
 
+✅ **Dual Interface**: Choose menu bar GUI or CLI
 ✅ **Performance**: 25% faster execution
 ✅ **Type Safety**: Compile-time error checking
 ✅ **Memory**: 68% less memory usage
 ✅ **Distribution**: Single self-contained binary
-✅ **System Integration**: Native IOKit access
+✅ **System Integration**: Native IOKit and SwiftUI
 ✅ **No Runtime**: Works without Python installed
+✅ **Menu Bar**: Always-on monitoring with beautiful UI
 
 ---
 
 ## Advanced Usage
 
-### Monitor Battery Degradation Over Time
+### Monitor Battery Degradation Over Time (CLI)
 
 ```bash
 # Create daily log
-.build/release/BatteryMonitor | grep -A5 "Battery Health" >> battery_log.txt
+.build/release/BatteryMonitorCLI | grep -A5 "Battery Health" >> battery_log.txt
 
 # Run via cron (daily at 9am)
-0 9 * * * /usr/local/bin/BatteryMonitor | grep "Health Percentage" >> ~/battery_history.log
+0 9 * * * /usr/local/bin/battery-monitor | grep "Health Percentage" >> ~/battery_history.log
 ```
 
-### Check Charger Compatibility
+### Check Charger Compatibility (CLI)
 
 ```bash
 # Verify negotiated contract
-.build/release/BatteryMonitor | grep "USB-C PD Contract"
+.build/release/BatteryMonitorCLI | grep "USB-C PD Contract"
 
 # Check all charger capabilities
-.build/release/BatteryMonitor | grep -A10 "Source Capabilities"
+.build/release/BatteryMonitorCLI | grep -A10 "Source Capabilities"
 ```
 
-### Monitor Real-time Power Consumption
+### Monitor Real-time Power Consumption (CLI)
 
 ```bash
 # Component power breakdown (requires sudo)
-sudo .build/release/BatteryMonitor | grep -A10 "Power Breakdown"
+sudo .build/release/BatteryMonitorCLI | grep -A10 "Power Breakdown"
 
 # Watch mode (update every 2 seconds)
-watch -n 2 "sudo .build/release/BatteryMonitor | grep -A10 'Power Breakdown'"
+watch -n 2 "sudo .build/release/BatteryMonitorCLI | grep -A10 'Power Breakdown'"
+```
+
+### Always-On Monitoring (Menu Bar App)
+
+```bash
+# Run menu bar app at login
+# Add to Login Items in System Settings > General > Login Items
+# Or run manually:
+open .build/release/BatteryMonitor
 ```
 
 ---
