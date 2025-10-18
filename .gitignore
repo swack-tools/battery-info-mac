@@ -9,6 +9,9 @@ Package.resolved
 settings.local.json
 WARP.md
 
+# Allow Sources directory (core project files)
+!Sources/
+
 # Xcode
 DerivedData/
 build/
@@ -112,13 +115,14 @@ env/
 ENV/
 *.egg-info/
 
-# Test outputs
-test_*.swift
+# Test outputs (but allow Sources directory)
+/test_*.swift
 
 # Local settings
 settings.local.json
 .vscode/
 
-# Build artifacts
-BatteryMonitor
+# Build artifacts (executables, not source directory)
+/BatteryMonitor
+.build/**/BatteryMonitor
 *.dSYM/
