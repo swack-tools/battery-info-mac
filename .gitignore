@@ -1,0 +1,124 @@
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+*.xcodeproj
+*.xcworkspace
+.vscode
+.claude
+settings.local.json
+WARP.md
+
+# Xcode
+DerivedData/
+build/
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+xcuserdata/
+*.moved-aside
+*.xccheckout
+*.xcscmblueprint
+*.xcuserstate
+IDEWorkspaceChecks.plist
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Thumbnails
+Thumbs.db
+
+# Files that might appear in the root of a volume
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Directories potentially created on remote AFP share
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Swift
+*.swiftmodule
+*.swiftdoc
+*.o
+*.so
+*.dylib
+
+# Playground
+timeline.xctimeline
+playground.xcworkspace
+
+# CocoaPods
+Pods/
+Podfile.lock
+
+# Carthage
+Carthage/Build/
+
+# fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output
+
+# Code coverage
+*.gcda
+*.gcno
+*.profdata
+*.profraw
+coverage/
+
+# Project-specific documentation (internal use only)
+CLAUDE.md
+WARP.md
+CONVERSION_SUMMARY.md
+BUILD.md
+FEATURE_PARITY.md
+FINAL_README.md
+README_SWIFT.md
+XCODE_BUILD_GUIDE.md
+
+# Project artifacts and temporary files
+output.txt
+convo.txt
+/tmp/
+*.log
+*.txt
+!Package.swift
+
+# Python artifacts (if Python version is in same repo)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+*.egg-info/
+
+# Test outputs
+test_*.swift
+
+# Local settings
+settings.local.json
+.vscode/
+
+# Build artifacts
+BatteryMonitor
+*.dSYM/
