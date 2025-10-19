@@ -196,6 +196,19 @@ Cycle Count:           Excellent (very low) (69 cycles)
 
 ## Installation
 
+### Download Pre-Built Release (Recommended)
+
+Download the latest DMG installer from [GitHub Releases](https://github.com/swackhamer/mac-battery-info-swift/releases):
+
+1. Download `BatteryMonitor.dmg`
+2. Open the DMG file
+3. Drag `Battery Monitor.app` to your Applications folder
+4. Launch from Applications or Spotlight
+
+For detailed installation instructions, see [INSTALL.md](INSTALL.md).
+
+For creating your own releases, see [RELEASE.md](RELEASE.md).
+
 ### Build from Source
 
 ```bash
@@ -504,6 +517,27 @@ swift build
 # Run unit tests (when available)
 swift test
 ```
+
+### Automated Releases
+
+This project uses GitHub Actions to automatically build and publish releases:
+
+```bash
+# Create and push a version tag
+git tag -a v1.0.0 -m "Release version 1.0.0"
+git push origin v1.0.0
+
+# The workflow will automatically:
+# 1. Build the release binaries
+# 2. Create .app bundle with proper Info.plist
+# 3. Generate DMG installer
+# 4. Create GitHub release
+# 5. Upload DMG and CLI artifacts
+```
+
+For more details, see [RELEASE.md](RELEASE.md).
+
+The workflow is defined in `.github/workflows/release.yml`.
 
 ### Contributing
 
