@@ -8,12 +8,29 @@ class BatteryDataManager: ObservableObject {
 
     static let shared = BatteryDataManager()
 
+    private let refreshQueue = DispatchQueue(label: "com.batterymonitor.refresh", qos: .userInitiated)
+    private var isRefreshing = false
+
     private init() {
         refresh()
     }
 
     func refresh() {
-        batteryInfo = BatteryDisplayInfo.fetch()
-        lastUpdate = Date()
+        // Prevent multiple simultaneous refreshes
+        guard !isRefreshing else { return }
+        isRefreshing = true
+
+        // Fetch data on background queue to avoid blocking UI
+        refreshQueue.async { [weak self] in
+            let newInfo = BatteryDisplayInfo.fetch()
+            let updateTime = Date()
+
+            // Update @Published properties on main thread
+            DispatchQueue.main.async {
+                self?.batteryInfo = newInfo
+                self?.lastUpdate = updateTime
+                self?.isRefreshing = false
+            }
+        }
     }
 }
