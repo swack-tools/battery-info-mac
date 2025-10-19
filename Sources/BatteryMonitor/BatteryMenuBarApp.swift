@@ -104,29 +104,33 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func updateStatusButton() {
-        guard let button = statusItem?.button else { return }
+        // Fetch battery data on background queue to avoid UI lag
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let batteryData = IOKitBattery.getBatteryInfo()
 
-        // Get battery data
-        let batteryData = IOKitBattery.getBatteryInfo()
+            // Use computed battery percentage
+            let percentage = batteryData.batteryPercentage
+            let isCharging = batteryData.isCharging
+            let isPluggedIn = batteryData.externalConnected
 
-        // Use computed battery percentage
-        let percentage = batteryData.batteryPercentage
-        let isCharging = batteryData.isCharging
-        let isPluggedIn = batteryData.externalConnected
+            // Update UI on main thread
+            DispatchQueue.main.async {
+                guard let self = self, let button = self.statusItem?.button else { return }
 
-        if percentage >= 0 {
+                if percentage >= 0 {
+                    // Create status text
+                    let chargingSymbol = isCharging ? "⚡" : (isPluggedIn ? "🔌" : "")
+                    button.title = String(format: "%@%.0f%%", chargingSymbol, Double(percentage))
 
-            // Create status text
-            let chargingSymbol = isCharging ? "⚡" : (isPluggedIn ? "🔌" : "")
-            button.title = String(format: "%@%.0f%%", chargingSymbol, Double(percentage))
-
-            // Set tooltip
-            button.toolTip = String(format: "Battery: %.0f%%\n%@",
-                                   percentage,
-                                   isCharging ? "Charging" : (isPluggedIn ? "Plugged In" : "On Battery"))
-        } else {
-            button.title = "🔋?"
-            button.toolTip = "Battery information unavailable"
+                    // Set tooltip
+                    button.toolTip = String(format: "Battery: %.0f%%\n%@",
+                                           percentage,
+                                           isCharging ? "Charging" : (isPluggedIn ? "Plugged In" : "On Battery"))
+                } else {
+                    button.title = "🔋?"
+                    button.toolTip = "Battery information unavailable"
+                }
+            }
         }
     }
 
