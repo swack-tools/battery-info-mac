@@ -126,3 +126,8 @@ settings.local.json
 /BatteryMonitor
 .build/**/BatteryMonitor
 *.dSYM/
+
+# Distribution
+*.dmg
+BatteryMonitor.app/
+dmg_staging/

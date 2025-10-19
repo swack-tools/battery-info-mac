@@ -1,0 +1,194 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-and-release:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Build release binary
+        run: |
+          swift build -c release --product BatteryMonitor
+          swift build -c release --product BatteryMonitorCLI
+
+      - name: Get version from tag
+        id: get_version
+        run: |
+          if [[ "${GITHUB_REF}" =~ ^refs/tags/v(.*)$ ]]; then
+            echo "version=${BASH_REMATCH[1]}" >> $GITHUB_OUTPUT
+            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          else
+            echo "version=dev" >> $GITHUB_OUTPUT
+            echo "tag=dev" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create .app bundle
+        run: |
+          # Create bundle structure
+          mkdir -p BatteryMonitor.app/Contents/MacOS
+          mkdir -p BatteryMonitor.app/Contents/Resources
+
+          # Copy binary
+          cp .build/arm64-apple-macosx/release/BatteryMonitor \
+             BatteryMonitor.app/Contents/MacOS/BatteryMonitor
+
+          # Create Info.plist
+          cat > BatteryMonitor.app/Contents/Info.plist << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+          	<key>CFBundleDevelopmentRegion</key>
+          	<string>en</string>
+          	<key>CFBundleExecutable</key>
+          	<string>BatteryMonitor</string>
+          	<key>CFBundleIdentifier</key>
+          	<string>com.batterymonitor.app</string>
+          	<key>CFBundleInfoDictionaryVersion</key>
+          	<string>6.0</string>
+          	<key>CFBundleName</key>
+          	<string>Battery Monitor</string>
+          	<key>CFBundlePackageType</key>
+          	<string>APPL</string>
+          	<key>CFBundleShortVersionString</key>
+          	<string>${{ steps.get_version.outputs.version }}</string>
+          	<key>CFBundleVersion</key>
+          	<string>${{ github.run_number }}</string>
+          	<key>LSMinimumSystemVersion</key>
+          	<string>13.0</string>
+          	<key>LSUIElement</key>
+          	<true/>
+          	<key>NSHighResolutionCapable</key>
+          	<true/>
+          	<key>NSHumanReadableCopyright</key>
+          	<string>Copyright © 2025. All rights reserved.</string>
+          </dict>
+          </plist>
+          EOF
+
+          # Verify bundle
+          ls -lh BatteryMonitor.app/Contents/MacOS/BatteryMonitor
+
+      - name: Create DMG
+        run: |
+          # Create staging directory
+          mkdir -p dmg_staging
+          cp -R BatteryMonitor.app dmg_staging/
+
+          # Create DMG
+          hdiutil create \
+            -volname "Battery Monitor" \
+            -srcfolder dmg_staging \
+            -ov \
+            -format UDZO \
+            BatteryMonitor.dmg
+
+          # Get DMG size
+          ls -lh BatteryMonitor.dmg
+
+      - name: Create checksums
+        run: |
+          shasum -a 256 BatteryMonitor.dmg > BatteryMonitor.dmg.sha256
+          cat BatteryMonitor.dmg.sha256
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.get_version.outputs.tag }}
+          release_name: Battery Monitor ${{ steps.get_version.outputs.version }}
+          body: |
+            ## Battery Monitor v${{ steps.get_version.outputs.version }}
+
+            ### macOS Menu Bar Battery Monitoring Tool
+
+            **Requirements:**
+            - macOS 13.0 (Ventura) or later
+            - Apple Silicon (M1/M2/M3/M4) Mac
+
+            ### Installation
+            1. Download `BatteryMonitor.dmg`
+            2. Open the DMG file
+            3. Drag `Battery Monitor.app` to your Applications folder
+            4. Launch from Applications or Spotlight
+
+            ### Features
+            - 🔋 Real-time battery percentage in menu bar
+            - ⚡ Charging indicators
+            - 📊 Detailed battery health metrics
+            - 🔌 USB-C Power Delivery diagnostics
+            - 🎨 Dark mode support
+            - 🔄 Auto-refresh every 30 seconds
+
+            ### What's Included
+            - `BatteryMonitor.dmg` - Installer package (${{ steps.get_version.outputs.version }})
+            - `BatteryMonitor.dmg.sha256` - Checksum for verification
+
+            For detailed installation instructions, see [INSTALL.md](https://github.com/${{ github.repository }}/blob/${{ steps.get_version.outputs.tag }}/INSTALL.md)
+
+            ---
+            🤖 Built with Swift and SwiftUI
+          draft: false
+          prerelease: false
+
+      - name: Upload DMG to Release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./BatteryMonitor.dmg
+          asset_name: BatteryMonitor.dmg
+          asset_content_type: application/x-apple-diskimage
+
+      - name: Upload Checksum to Release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./BatteryMonitor.dmg.sha256
+          asset_name: BatteryMonitor.dmg.sha256
+          asset_content_type: text/plain
+
+      - name: Upload CLI binary to Release
+        run: |
+          # Package CLI tool separately
+          cp .build/arm64-apple-macosx/release/BatteryMonitorCLI .
+          tar -czf BatteryMonitorCLI.tar.gz BatteryMonitorCLI
+          shasum -a 256 BatteryMonitorCLI.tar.gz > BatteryMonitorCLI.tar.gz.sha256
+
+      - name: Upload CLI to Release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./BatteryMonitorCLI.tar.gz
+          asset_name: BatteryMonitorCLI.tar.gz
+          asset_content_type: application/gzip
+
+      - name: Upload CLI Checksum to Release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./BatteryMonitorCLI.tar.gz.sha256
+          asset_name: BatteryMonitorCLI.tar.gz.sha256
+          asset_content_type: text/plain
