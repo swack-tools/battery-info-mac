@@ -203,9 +203,11 @@ Download the latest DMG installer from [GitHub Releases](https://github.com/swac
 1. Download `BatteryMonitor.dmg`
 2. Open the DMG file
 3. Drag `Battery Monitor.app` to your Applications folder
-4. Launch from Applications or Spotlight
+4. **Right-click** on the app and select **Open** (first launch only)
+   - macOS will block the app because it's not notarized
+   - This is normal - see [INSTALL.md](INSTALL.md) for details
 
-For detailed installation instructions, see [INSTALL.md](INSTALL.md).
+For detailed installation instructions and troubleshooting, see [INSTALL.md](INSTALL.md).
 
 For creating your own releases, see [RELEASE.md](RELEASE.md).
 

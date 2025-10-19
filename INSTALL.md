@@ -6,7 +6,7 @@
 
 ## Installation
 
-1. **Download** `BatteryMonitor.dmg` (107 KB)
+1. **Download** `BatteryMonitor.dmg` (~200 KB)
 
 2. **Open** the DMG file by double-clicking it
 
@@ -14,8 +14,27 @@
    - Or run it directly from the DMG
 
 4. **Launch** Battery Monitor
-   - Find it in Applications or use Spotlight (⌘+Space, type "Battery Monitor")
-   - On first launch, you may need to allow it in System Settings → Privacy & Security
+
+   **IMPORTANT:** Since this app is not notarized by Apple, macOS will block it on first launch. You'll see an error saying the app is "damaged" or "from an unidentified developer."
+
+   **To open the app, use ONE of these methods:**
+
+   ### Method 1: Right-Click to Open (Recommended)
+   - Right-click (or Control-click) on `Battery Monitor.app` in Applications
+   - Select **Open** from the menu
+   - Click **Open** in the dialog that appears
+   - You only need to do this once; after that, it will open normally
+
+   ### Method 2: Remove Quarantine Attribute (Advanced)
+   - Open Terminal
+   - Run: `xattr -cr /Applications/BatteryMonitor.app`
+   - Then launch the app normally
+
+   ### Method 3: System Settings
+   - Try to open the app normally (it will be blocked)
+   - Go to **System Settings → Privacy & Security**
+   - Scroll down and click **Open Anyway** next to the Battery Monitor message
+   - Click **Open** in the confirmation dialog
 
 5. **Menu Bar Icon**
    - The battery percentage will appear in your menu bar
@@ -59,17 +78,37 @@
 
 ## Troubleshooting
 
-### App won't open
+### "Battery Monitor is damaged and can't be opened" error
+This is a normal macOS security feature (Gatekeeper) because the app is not notarized by Apple.
+
+**Solution:**
+- Use **Method 1** from the installation steps above (Right-click → Open)
+- Or use Terminal: `xattr -cr /Applications/BatteryMonitor.app`
+
+This is safe - the app is open source and built from verified GitHub Actions.
+
+### "App is from an unidentified developer" warning
+This is expected. The app is not signed with an Apple Developer ID certificate.
+
+**Solution:**
+- Right-click the app and choose **Open**
+- Click **Open** in the security dialog
+- The app will open normally after this first time
+
+### App won't open (other reasons)
 - Go to **System Settings → Privacy & Security**
-- Click "Open Anyway" if prompted
+- Look for a message about Battery Monitor
+- Click **Open Anyway** if prompted
 
 ### Menu bar icon not showing
 - Make sure you have menu bar space available
 - Try quitting and relaunching the app
+- Check if the icon is hidden in the menu bar overflow (»)
 
 ### Permission issues
-- The app requires no special permissions
+- The app requires no special permissions for basic features
 - All battery data is read from public macOS APIs
+- No sudo or administrator access needed
 
 ## Version
 
