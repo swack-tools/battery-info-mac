@@ -6,6 +6,9 @@ on:
       - 'v*'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build-and-release:
     runs-on: macos-latest
@@ -99,96 +102,58 @@ jobs:
           # Get DMG size
           ls -lh BatteryMonitor.dmg
 
-      - name: Create checksums
-        run: |
-          shasum -a 256 BatteryMonitor.dmg > BatteryMonitor.dmg.sha256
-          cat BatteryMonitor.dmg.sha256
-
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ steps.get_version.outputs.tag }}
-          release_name: Battery Monitor ${{ steps.get_version.outputs.version }}
-          body: |
-            ## Battery Monitor v${{ steps.get_version.outputs.version }}
-
-            ### macOS Menu Bar Battery Monitoring Tool
-
-            **Requirements:**
-            - macOS 13.0 (Ventura) or later
-            - Apple Silicon (M1/M2/M3/M4) Mac
-
-            ### Installation
-            1. Download `BatteryMonitor.dmg`
-            2. Open the DMG file
-            3. Drag `Battery Monitor.app` to your Applications folder
-            4. Launch from Applications or Spotlight
-
-            ### Features
-            - 🔋 Real-time battery percentage in menu bar
-            - ⚡ Charging indicators
-            - 📊 Detailed battery health metrics
-            - 🔌 USB-C Power Delivery diagnostics
-            - 🎨 Dark mode support
-            - 🔄 Auto-refresh every 30 seconds
-
-            ### What's Included
-            - `BatteryMonitor.dmg` - Installer package (${{ steps.get_version.outputs.version }})
-            - `BatteryMonitor.dmg.sha256` - Checksum for verification
-
-            For detailed installation instructions, see [INSTALL.md](https://github.com/${{ github.repository }}/blob/${{ steps.get_version.outputs.tag }}/INSTALL.md)
-
-            ---
-            🤖 Built with Swift and SwiftUI
-          draft: false
-          prerelease: false
-
-      - name: Upload DMG to Release
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./BatteryMonitor.dmg
-          asset_name: BatteryMonitor.dmg
-          asset_content_type: application/x-apple-diskimage
-
-      - name: Upload Checksum to Release
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./BatteryMonitor.dmg.sha256
-          asset_name: BatteryMonitor.dmg.sha256
-          asset_content_type: text/plain
-
-      - name: Upload CLI binary to Release
+      - name: Package CLI binary
         run: |
           # Package CLI tool separately
           cp .build/arm64-apple-macosx/release/BatteryMonitorCLI .
           tar -czf BatteryMonitorCLI.tar.gz BatteryMonitorCLI
           shasum -a 256 BatteryMonitorCLI.tar.gz > BatteryMonitorCLI.tar.gz.sha256
 
-      - name: Upload CLI to Release
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./BatteryMonitorCLI.tar.gz
-          asset_name: BatteryMonitorCLI.tar.gz
-          asset_content_type: application/gzip
+      - name: Create checksums
+        run: |
+          shasum -a 256 BatteryMonitor.dmg > BatteryMonitor.dmg.sha256
+          cat BatteryMonitor.dmg.sha256
+          cat BatteryMonitorCLI.tar.gz.sha256
 
-      - name: Upload CLI Checksum to Release
-        uses: actions/upload-release-asset@v1
+      - name: Create GitHub Release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./BatteryMonitorCLI.tar.gz.sha256
-          asset_name: BatteryMonitorCLI.tar.gz.sha256
-          asset_content_type: text/plain
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create ${{ steps.get_version.outputs.tag }} \
+            --title "Battery Monitor ${{ steps.get_version.outputs.version }}" \
+            --notes "## Battery Monitor v${{ steps.get_version.outputs.version }}
+
+          ### macOS Menu Bar Battery Monitoring Tool
+
+          **Requirements:**
+          - macOS 13.0 (Ventura) or later
+          - Apple Silicon (M1/M2/M3/M4) Mac
+
+          ### Installation
+          1. Download \`BatteryMonitor.dmg\`
+          2. Open the DMG file
+          3. Drag \`Battery Monitor.app\` to your Applications folder
+          4. Launch from Applications or Spotlight
+
+          ### Features
+          - 🔋 Real-time battery percentage in menu bar
+          - ⚡ Charging indicators
+          - 📊 Detailed battery health metrics
+          - 🔌 USB-C Power Delivery diagnostics
+          - 🎨 Dark mode support
+          - 🔄 Auto-refresh every 30 seconds
+
+          ### What's Included
+          - \`BatteryMonitor.dmg\` - Installer package (${{ steps.get_version.outputs.version }})
+          - \`BatteryMonitor.dmg.sha256\` - Checksum for verification
+          - \`BatteryMonitorCLI.tar.gz\` - Command-line tool
+          - \`BatteryMonitorCLI.tar.gz.sha256\` - CLI checksum
+
+          For detailed installation instructions, see [INSTALL.md](https://github.com/${{ github.repository }}/blob/${{ steps.get_version.outputs.tag }}/INSTALL.md)
+
+          ---
+          🤖 Built with Swift and SwiftUI" \
+            BatteryMonitor.dmg \
+            BatteryMonitor.dmg.sha256 \
+            BatteryMonitorCLI.tar.gz \
+            BatteryMonitorCLI.tar.gz.sha256
