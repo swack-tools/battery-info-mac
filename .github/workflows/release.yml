@@ -85,6 +85,15 @@ jobs:
           # Verify bundle
           ls -lh BatteryMonitor.app/Contents/MacOS/BatteryMonitor
 
+      - name: Code sign app bundle
+        run: |
+          # Ad-hoc code signing (for development/testing)
+          # For production, you would use a Developer ID certificate
+          codesign --force --deep --sign - BatteryMonitor.app
+
+          # Verify signature
+          codesign -dvv BatteryMonitor.app
+
       - name: Create DMG
         run: |
           # Create staging directory
