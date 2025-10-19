@@ -16,16 +16,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem?
     var popover: NSPopover?
     var timer: Timer?
+    var contextMenu: NSMenu?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Pre-cache battery data at startup for instant popover display
+        BatteryDataManager.shared.refresh()
+
         // Create the status bar item
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
         if let button = statusItem?.button {
-            button.action = #selector(togglePopover)
+            button.action = #selector(handleClick)
+            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
             button.target = self
             updateStatusButton()
         }
+
+        // Create the context menu (but don't assign it yet)
+        contextMenu = createMenu()
 
         // Create the popover
         let popover = NSPopover()
@@ -41,9 +49,51 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    @objc func togglePopover() {
+    func createMenu() -> NSMenu {
+        let menu = NSMenu()
+
+        // Refresh item
+        let refreshItem = NSMenuItem(title: "Refresh", action: #selector(menuRefresh), keyEquivalent: "r")
+        refreshItem.target = self
+        menu.addItem(refreshItem)
+
+        menu.addItem(NSMenuItem.separator())
+
+        // Quit item
+        let quitItem = NSMenuItem(title: "Quit Battery Monitor", action: #selector(menuQuit), keyEquivalent: "q")
+        quitItem.target = self
+        menu.addItem(quitItem)
+
+        return menu
+    }
+
+    @objc func menuRefresh() {
+        updateStatusButton()
+        BatteryDataManager.shared.refresh()
+    }
+
+    @objc func menuQuit() {
+        NSApplication.shared.terminate(nil)
+    }
+
+    @objc func handleClick() {
         guard let button = statusItem?.button else { return }
 
+        // Check if this is a right-click
+        if let event = NSApp.currentEvent {
+            if event.type == .rightMouseUp {
+                // Right-click: show context menu
+                statusItem?.menu = contextMenu
+                statusItem?.button?.performClick(nil)
+                // Clear menu after it's shown so left-click works
+                DispatchQueue.main.async { [weak self] in
+                    self?.statusItem?.menu = nil
+                }
+                return
+            }
+        }
+
+        // Left-click: show/hide popover
         if let popover = popover {
             if popover.isShown {
                 popover.performClose(nil)
@@ -64,9 +114,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let isCharging = batteryData.isCharging
         let isPluggedIn = batteryData.externalConnected
 
-        // Debug logging
-        print("DEBUG: currentCapacity=\(batteryData.currentCapacity), maxCapacity=\(batteryData.maxCapacity), percentage=\(percentage)")
-
         if percentage >= 0 {
 
             // Create status text
@@ -84,10 +131,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func refreshPopover() {
-        // Refresh the popover content if it's showing
-        if let popover = popover, popover.isShown {
-            popover.contentViewController = NSHostingController(rootView: BatteryDetailView())
-        }
+        // Refresh the data (SwiftUI will automatically update the view)
+        BatteryDataManager.shared.refresh()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
