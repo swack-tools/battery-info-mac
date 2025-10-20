@@ -528,16 +528,19 @@ struct BatteryDisplayInfo {
                 info.pdContract = String(format: "%.2f V @ %.2f A (%.0f W)", voltage, current, power)
             }
 
-            // Charger ID
-            if charger.adapterID > 0 {
-                info.chargerID = String(format: "0x%02X", charger.adapterID)
-            }
+            // Charger ID (0x00 = Generic/Third-Party)
+            info.chargerID = String(format: "0x%02X", charger.adapterID)
 
             // Not charging reason
             info.notChargingReason = charger.isCharging ? "None (charging normally)" : "Not charging"
 
             // External charge capable
             info.externalChargeCapable = charger.externalChargeCapable ? "Yes" : "No"
+
+            // Charger Configuration (decoded to human-readable)
+            if let config = charger.chargerConfiguration {
+                info.chargerConfig = decodeChargerConfig(config)
+            }
 
             // Adapter real-time power (from PowerTelemetryData)
             if let adapterPower = batteryData.adapterPower, adapterPower > 0 {
@@ -729,5 +732,45 @@ struct BatteryDisplayInfo {
 
         return info
     }
+}
+
+// MARK: - Helper Functions
+
+/// Get bit positions that are set in a value
+fileprivate func getBitPositions(_ value: Int) -> [Int] {
+    var positions: [Int] = []
+    for i in 0..<32 {
+        if (value & (1 << i)) != 0 {
+            positions.append(i)
+        }
+    }
+    return positions
+}
+
+/// Decode charger configuration bits to human-readable string
+fileprivate func decodeChargerConfig(_ config: Int) -> String {
+    let bitMeanings: [Int: String] = [
+        0: "Battery present",
+        1: "AC adapter present",
+        2: "Full charge mode",
+        3: "Charging disabled",
+        4: "Battery installed",
+        5: "Charger suspended",
+        6: "Charger inhibited (charge stopped)",
+        10: "Fast charge allowed",
+        11: "Charge inhibit override"
+    ]
+
+    var meanings: [String] = []
+
+    for bit in 0..<16 {
+        if (config & (1 << bit)) != 0 {
+            if let meaning = bitMeanings[bit] {
+                meanings.append(meaning)
+            }
+        }
+    }
+
+    return meanings.isEmpty ? "Normal" : meanings.joined(separator: ", ")
 }
 

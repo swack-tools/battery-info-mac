@@ -526,6 +526,30 @@ struct ChargingInfoSection: View {
                 if let power = info.power {
                     InfoRow(label: "Power", value: power, valueColor: .green)
                 }
+
+                if let id = info.chargerID {
+                    InfoRow(label: "Charger ID", value: id)
+                }
+
+                if let adapterInput = info.adapterInput {
+                    InfoRow(label: "Adapter Input", value: adapterInput, valueColor: .green)
+                }
+
+                if let efficiency = info.adapterEfficiency {
+                    InfoRow(label: "Adapter Efficiency", value: efficiency)
+                }
+
+                if let config = info.chargerConfig {
+                    InfoRow(label: "Charger Config", value: config, valueColor: .cyan)
+                }
+
+                if let externalCharge = info.externalChargeCapable {
+                    InfoRow(label: "External Charge", value: externalCharge)
+                }
+
+                if let notChargingReason = info.notChargingReason {
+                    InfoRow(label: "Not Charging Reason", value: notChargingReason)
+                }
             }
             .padding(.top, 8)
         } label: {
