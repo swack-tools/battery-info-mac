@@ -8,36 +8,23 @@ struct BatteryDecoders {
     // MARK: - Charger Configuration
 
     /// Decode ChargerConfiguration bit flags
+    ///
+    /// NOTE: Apple does not document the meaning of ChargerConfiguration bits.
+    /// This decoder only shows which bits are set without interpretation.
     static func decodeChargerConfig(_ config: Int) -> String {
-        let bitMeanings: [Int: String] = [
-            0: "Battery present",
-            1: "AC adapter present",
-            2: "Full charge mode",
-            3: "Charging disabled",
-            4: "Battery installed",
-            5: "Charger suspended",
-            6: "Charger inhibited",
-            10: "Fast charge allowed",
-            11: "Charge inhibit override"
-        ]
-
-        var meanings: [String] = []
         var activeBits: [Int] = []
 
         for bit in 0..<16 {
             if (config & (1 << bit)) != 0 {
                 activeBits.append(bit)
-                if let meaning = bitMeanings[bit] {
-                    meanings.append(meaning)
-                }
             }
         }
 
         let bitsStr = activeBits.map { String($0) }.joined(separator: ", ")
         let result = String(format: "0x%04X (bits: %@)", config, bitsStr)
 
-        if !meanings.isEmpty {
-            return result + "\n                     " + meanings.joined(separator: ", ")
+        if !activeBits.isEmpty {
+            return result + "\n                     ⚠️  Bit meanings undocumented by Apple"
         }
 
         return result
