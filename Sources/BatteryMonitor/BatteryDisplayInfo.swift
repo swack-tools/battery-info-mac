@@ -323,9 +323,9 @@ struct BatteryDisplayInfo {
         }
 
         // Battery age
-        if let mfgDate = batteryData.manufactureDate {
+        if batteryData.manufactureDate != nil {
             // Calculate age from manufacture date
-            // mfgDate format is already a string, just display as-is for now
+            // manufactureDate format is already a string, just display as-is for now
             // TODO: Calculate actual age if we parse the date
         }
 

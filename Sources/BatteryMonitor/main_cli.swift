@@ -246,49 +246,15 @@ struct BatteryMonitorCLI {
             }
 
             if let gaugeStatus = battery.gaugeStatus {
-                // Decode gauge status flags (matching Python decoder)
-                var statusFlags: [String] = []
-                if gaugeStatus & 0x0001 != 0 { statusFlags.append("Discharge Detected") }
-                if gaugeStatus & 0x0002 != 0 { statusFlags.append("Charge Termination") }
-                if gaugeStatus & 0x0004 != 0 { statusFlags.append("Overcharge Detection") }
-                if gaugeStatus & 0x0008 != 0 { statusFlags.append("Terminate Discharge Alarm") }
-                if gaugeStatus & 0x0010 != 0 { statusFlags.append("Over-Temperature Alarm") }
-                if gaugeStatus & 0x0020 != 0 { statusFlags.append("Terminate Charge Alarm") }
-                if gaugeStatus & 0x0040 != 0 { statusFlags.append("Impedance Measured") }
-                if gaugeStatus & 0x0080 != 0 { statusFlags.append("Fully Charged (FC)") }
-                if gaugeStatus & 0x0100 != 0 { statusFlags.append("Discharge Inhibit") }
-                if gaugeStatus & 0x0200 != 0 { statusFlags.append("Charge Inhibit") }
-                if gaugeStatus & 0x0400 != 0 { statusFlags.append("Voltage OK (VOK)") }
-                if gaugeStatus & 0x0800 != 0 { statusFlags.append("Ready (RDY)") }
-                if gaugeStatus & 0x1000 != 0 { statusFlags.append("Qualified for Use (QEN)") }
-                if gaugeStatus & 0x2000 != 0 { statusFlags.append("Fast Charge OK") }
-                if gaugeStatus & 0x4000 != 0 { statusFlags.append("Battery Present") }
-                if gaugeStatus & 0x8000 != 0 { statusFlags.append("Valid Data") }
-
-                let decodedStatus = statusFlags.isEmpty ? "None (0x00)" : statusFlags.joined(separator: ", ")
-                printRow("Gauge Status:", "\(decodedStatus) (0x\(String(format: "%04X", gaugeStatus)))")
+                let decodedStatus = BatteryDecoders.decodeGaugeFlags(gaugeStatus)
+                printRow("Gauge Status:", decodedStatus)
                 printDescription("Battery gauge chip status flags")
             }
 
             if let miscStatus = battery.miscStatus {
-                // Decode misc status flags (matching Python decoder)
-                var miscFlags: [String] = []
-                if miscStatus & 0x0001 != 0 { miscFlags.append("Cell Balancing Active") }
-                if miscStatus & 0x0002 != 0 { miscFlags.append("Pre-Charge Mode") }
-                if miscStatus & 0x0004 != 0 { miscFlags.append("Authentication OK") }
-                if miscStatus & 0x0008 != 0 { miscFlags.append("Seal Mode Active") }
-                if miscStatus & 0x0010 != 0 { miscFlags.append("Permanent Failure") }
-                if miscStatus & 0x0020 != 0 { miscFlags.append("Safety Mode") }
-                if miscStatus & 0x0040 != 0 { miscFlags.append("Low Impedance") }
-                if miscStatus & 0x0080 != 0 { miscFlags.append("Update in Progress") }
-                if miscStatus & 0x0100 != 0 { miscFlags.append("Battery Swelling Detected") }
-                if miscStatus & 0x0200 != 0 { miscFlags.append("Pack Voltage High") }
-                if miscStatus & 0x0400 != 0 { miscFlags.append("Pack Voltage Low") }
-                if miscStatus & 0x0800 != 0 { miscFlags.append("Temperature Out of Range") }
-
-                let decodedMisc = miscFlags.isEmpty ? "None (0x00)" : miscFlags.joined(separator: ", ")
-                printRow("Misc Status:", "\(decodedMisc) (0x\(String(format: "%04X", miscStatus)))")
-                printDescription("Battery management system status")
+                let decodedMisc = BatteryDecoders.decodeMiscStatus(miscStatus)
+                printRow("Misc Status:", decodedMisc)
+                printDescription("⚠️  Bit meanings undocumented by Apple")
             }
 
             if let postCharge = battery.postChargeWaitSeconds {

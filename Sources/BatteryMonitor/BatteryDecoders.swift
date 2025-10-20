@@ -46,7 +46,7 @@ struct BatteryDecoders {
             0x0010: "Over-Temperature Alarm",
             0x0020: "Terminate Charge Alarm",
             0x0040: "Impedance Measured",
-            0x0080: "Fully Charged (FC)",
+            0x0080: "Fully Charged (fast charge complete, trickle charging)",
             0x0100: "Discharge Inhibit",
             0x0200: "Charge Inhibit",
             0x0400: "Voltage OK (VOK)",
@@ -74,38 +74,24 @@ struct BatteryDecoders {
     // MARK: - Misc Status
 
     /// Decode MiscStatus bit flags
+    ///
+    /// NOTE: Apple does not document the meaning of MiscStatus bits.
+    /// This decoder only shows which bits are set without interpretation.
     static func decodeMiscStatus(_ status: Int) -> String {
         if status == 0 {
             return "None (0x00)"
         }
 
-        let statusBits: [Int: String] = [
-            0x0001: "Cell Balancing Active",
-            0x0002: "Pre-Charge Mode",
-            0x0004: "Authentication OK",
-            0x0008: "Seal Mode Active",
-            0x0010: "Permanent Failure",
-            0x0020: "Safety Mode",
-            0x0040: "Low Impedance",
-            0x0080: "Update in Progress",
-            0x0100: "Battery Swelling Detected",
-            0x0200: "Pack Voltage High",
-            0x0400: "Pack Voltage Low",
-            0x0800: "Temperature Out of Range"
-        ]
+        var activeBits: [Int] = []
 
-        var activeStatuses: [String] = []
-        for (bit, desc) in statusBits {
-            if (status & bit) != 0 {
-                activeStatuses.append(desc)
+        for bit in 0..<16 {
+            if (status & (1 << bit)) != 0 {
+                activeBits.append(bit)
             }
         }
 
-        if !activeStatuses.isEmpty {
-            return activeStatuses.joined(separator: ", ") + String(format: " (0x%04X)", status)
-        } else {
-            return String(format: "0x%04X", status)
-        }
+        let bitsStr = activeBits.map { String($0) }.joined(separator: ", ")
+        return String(format: "0x%04X (bits: %@)", status, bitsStr)
     }
 
     // MARK: - Permanent Failure Status

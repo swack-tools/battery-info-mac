@@ -79,7 +79,7 @@ struct BatteryMonitorCLI {
         printRow("Charging:", battery.isCharging ? "Yes" : "No")
 
         if let timeToFull = battery.timeToFull, battery.isCharging {
-            let hours = timeToFull / 60
+            let _ = timeToFull / 60
             let mins = timeToFull % 60
             printRow("Avg Time to Full:", "\(mins) min (\(timeToFull) min)")
         }
@@ -271,24 +271,9 @@ struct BatteryMonitorCLI {
             }
 
             if let miscStatus = battery.miscStatus {
-                // Decode misc status flags (matching Python decoder)
-                var miscFlags: [String] = []
-                if miscStatus & 0x0001 != 0 { miscFlags.append("Cell Balancing Active") }
-                if miscStatus & 0x0002 != 0 { miscFlags.append("Pre-Charge Mode") }
-                if miscStatus & 0x0004 != 0 { miscFlags.append("Authentication OK") }
-                if miscStatus & 0x0008 != 0 { miscFlags.append("Seal Mode Active") }
-                if miscStatus & 0x0010 != 0 { miscFlags.append("Permanent Failure") }
-                if miscStatus & 0x0020 != 0 { miscFlags.append("Safety Mode") }
-                if miscStatus & 0x0040 != 0 { miscFlags.append("Low Impedance") }
-                if miscStatus & 0x0080 != 0 { miscFlags.append("Update in Progress") }
-                if miscStatus & 0x0100 != 0 { miscFlags.append("Battery Swelling Detected") }
-                if miscStatus & 0x0200 != 0 { miscFlags.append("Pack Voltage High") }
-                if miscStatus & 0x0400 != 0 { miscFlags.append("Pack Voltage Low") }
-                if miscStatus & 0x0800 != 0 { miscFlags.append("Temperature Out of Range") }
-
-                let decodedMisc = miscFlags.isEmpty ? "None (0x00)" : miscFlags.joined(separator: ", ")
-                printRow("Misc Status:", "\(decodedMisc) (0x\(String(format: "%04X", miscStatus)))")
-                printDescription("Battery management system status")
+                let decodedMisc = BatteryDecoders.decodeMiscStatus(miscStatus)
+                printRow("Misc Status:", decodedMisc)
+                printDescription("⚠️  Bit meanings undocumented by Apple")
             }
 
             if let postCharge = battery.postChargeWaitSeconds {
@@ -358,7 +343,7 @@ struct BatteryMonitorCLI {
             printRow("Connected:", "Yes")
 
             // Charging type
-            if let chargingType = charger.chargingType {
+            if charger.chargingType != nil {
                 let typeDisplay = charger.isWireless ? "Wireless" : "USB-C Wired"
                 printRow("Charging Type:", typeDisplay)
             }
