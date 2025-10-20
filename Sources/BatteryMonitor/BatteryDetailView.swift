@@ -136,10 +136,6 @@ struct BatteryDetailView: View {
                 HealthAssessmentSection(info: dataManager.batteryInfo)
                 Divider()
 
-                // Display
-                DisplaySection(info: dataManager.batteryInfo)
-                Divider()
-
                 // USB Ports
                 USBPortsSection(info: dataManager.batteryInfo)
                 Divider()
@@ -778,35 +774,6 @@ struct AdvancedDiagnosticsSection: View {
                     .foregroundColor(.red)
                     .font(.system(size: sectionHeaderFontSize))
                 Text("Advanced Diagnostics")
-                    .font(.system(size: sectionHeaderFontSize))
-                    .fontWeight(.semibold)
-            }
-        }
-    }
-}
-
-// MARK: - Display Section
-struct DisplaySection: View {
-    let info: BatteryDisplayInfo
-
-    var body: some View {
-        DisclosureGroup {
-            VStack(alignment: .leading, spacing: 6) {
-                if let brightness = info.displayBrightness {
-                    InfoRow(label: "Display Brightness", value: brightness, valueColor: .cyan)
-                }
-
-                if let power = info.displayPowerEstimate {
-                    InfoRow(label: "Display Power (est)", value: power, valueColor: .orange)
-                }
-            }
-            .padding(.top, 8)
-        } label: {
-            HStack {
-                Image(systemName: "display")
-                    .foregroundColor(.cyan)
-                    .font(.system(size: sectionHeaderFontSize))
-                Text("Display")
                     .font(.system(size: sectionHeaderFontSize))
                     .fontWeight(.semibold)
             }
