@@ -413,7 +413,7 @@ class PowerInfo:
             0x0010: "Over-Temperature Alarm",
             0x0020: "Terminate Charge Alarm",
             0x0040: "Impedance Measured",
-            0x0080: "Fully Charged (FC)",
+            0x0080: "Fully Charged (fast charge complete, trickle charging)",
             0x0100: "Discharge Inhibit",
             0x0200: "Charge Inhibit",
             0x0400: "Voltage OK (VOK)",
@@ -440,37 +440,19 @@ class PowerInfo:
     def _decode_misc_status(status: int) -> str:
         """Decode MiscStatus bit flags (miscellaneous battery status)
 
-        Various battery management system status flags.
+        NOTE: Apple does not document the meaning of MiscStatus bits.
+        This decoder only shows which bits are set without interpretation.
         """
         if status == 0:
             return "None (0x00)"
 
-        status_bits = {
-            0x0001: "Cell Balancing Active",
-            0x0002: "Pre-Charge Mode",
-            0x0004: "Authentication OK",
-            0x0008: "Seal Mode Active",
-            0x0010: "Permanent Failure",
-            0x0020: "Safety Mode",
-            0x0040: "Low Impedance",
-            0x0080: "Update in Progress",
-            0x0100: "Battery Swelling Detected",
-            0x0200: "Pack Voltage High",
-            0x0400: "Pack Voltage Low",
-            0x0800: "Temperature Out of Range",
-        }
+        active_bits = []
+        for bit in range(16):
+            if status & (1 << bit):
+                active_bits.append(str(bit))
 
-        active_statuses = []
-        for bit, desc in status_bits.items():
-            if status & bit:
-                active_statuses.append(desc)
-
-        if active_statuses:
-            result = ", ".join(active_statuses)
-            return f"{result} (0x{status:04X})"
-        else:
-            # No known flags, just show hex
-            return f"0x{status:04X}"
+        bits_str = ", ".join(active_bits)
+        return f"0x{status:04X} (bits: {bits_str})"
 
     @staticmethod
     def _decode_wait_seconds(seconds: int) -> str:
@@ -2408,17 +2390,8 @@ class PowerInfo:
             # Miscellaneous Status (Tier 3.3F)
             if 'misc_status_decoded' in ioreg_data:
                 status_str = ioreg_data['misc_status_decoded']
-                # Color code based on status
-                if 'Failure' in status_str or 'Swelling' in status_str or 'Safety' in status_str:
-                    color = Colors.RED
-                elif 'Balancing' in status_str or 'Pre-Charge' in status_str:
-                    color = Colors.YELLOW
-                elif 'Authentication OK' in status_str:
-                    color = Colors.GREEN
-                else:
-                    color = ""
-                self.print_row("Misc Status:", f"{color}{status_str}{Colors.RESET}")
-                print(f"{Colors.DIM}                       Battery management system status{Colors.RESET}")
+                self.print_row("Misc Status:", status_str)
+                print(f"{Colors.DIM}                       ⚠️  Bit meanings undocumented by Apple{Colors.RESET}")
 
             # Wait Times (Tier 3.3F)
             if 'post_charge_wait_decoded' in ioreg_data:

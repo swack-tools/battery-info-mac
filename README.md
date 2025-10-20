@@ -143,8 +143,9 @@ Cell Voltage Delta:    2mV
 Advanced Battery Diagnostics
 ==================================================
 Internal Resistance:   76.7 mΩ (Excellent)
-Gauge Status:          Terminate Charge Alarm, Impedance Measured, Fully Charged (FC)
-Misc Status:           Authentication OK, Seal Mode Active, Low Impedance
+Gauge Status:          Terminate Charge Alarm, Impedance Measured, Fully Charged (fast charge complete, trickle charging)
+Misc Status:           0x008C (bits: 2, 3, 7)
+                       ⚠️  Bit meanings undocumented by Apple
 Battery Mfg:           ATL
 Battery Model (Mfg):   3513 (rev 004)
 Manufacture Date:      2023-06-21 (Lot: 3)
@@ -440,9 +441,9 @@ open .build/release/BatteryMonitor
 
 1. **Charger Family** - Identifies Apple adapters (140W, 96W, 87W, etc.)
 2. **Gauge Status** - 16-bit fuel gauge chip flags
-3. **Misc Status** - 12-bit battery management flags
+3. **Misc Status** - Shows active bits (meanings undocumented by Apple)
 4. **Permanent Failure** - Battery failure indicators
-5. **Charger Config** - 12-bit charging circuit configuration
+5. **Charger Config** - Shows active bits (meanings undocumented by Apple)
 6. **Not Charging Reason** - Why charging is inhibited
 7. **Chemistry ID** - Li-ion battery chemistry types
 8. **Port Mode** - DRP/DFP/UFP role decoder

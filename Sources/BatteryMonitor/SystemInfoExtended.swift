@@ -266,7 +266,7 @@ extension SystemCommands {
 
         defer { IOObjectRelease(iterator) }
 
-        var service = IOIteratorNext(iterator)
+        let service = IOIteratorNext(iterator)
         guard service != 0 else { return nil }
 
         defer { IOObjectRelease(service) }
