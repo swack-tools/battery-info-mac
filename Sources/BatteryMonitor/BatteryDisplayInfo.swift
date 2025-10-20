@@ -49,6 +49,10 @@ struct BatteryDisplayInfo {
     var batterySerial: String? = nil
     var manufactureDate: String? = nil
     var chemistry: String? = nil
+    var deviceName: String? = nil  // e.g. "bq40z651"
+    var firmwareVersion: String? = nil  // e.g. "0b00"
+    var gasGaugeFirmwareVersion: String? = nil  // e.g. "v2"
+    var batteryAge: String? = nil  // e.g. "45 days (0.1 years)"
 
     // Advanced Diagnostics
     var internalResistance: String? = nil
@@ -67,15 +71,44 @@ struct BatteryDisplayInfo {
     var postChargeWait: String? = nil
     var postDischargeWait: String? = nil
     var invalidWakeTime: String? = nil
+    var chargeAccumulated: String? = nil
+    var lastCalibration: String? = nil  // e.g. "6 cycles ago (at cycle 63)"
+
+    // Lifetime Statistics
+    var totalOperatingTime: String? = nil  // e.g. "6361 minutes (~106.0 hours)"
+    var maximumTemperature: String? = nil  // e.g. "39°C"
+    var minimumTemperature: String? = nil  // e.g. "14°C"
+    var averageTemperature: String? = nil  // e.g. "21.7°C"
+
+    // Health Assessment
+    var healthScore: String? = nil  // e.g. "95/100 (A - Very Good)"
+    var healthGrade: String? = nil  // e.g. "A"
+    var healthDescription: String? = nil  // e.g. "Very Good"
+    var cycleAssessment: String? = nil  // e.g. "Excellent"
+    var capacityAssessment: String? = nil  // e.g. "Excellent"
+
+    // Electrical Information
+    var currentAvg: String? = nil  // e.g. "+1.90A (1900 mA) (charging)"
+    var currentInstant: String? = nil  // e.g. "1.90A (1900 mA)"
+    var currentFiltered: String? = nil  // e.g. "0 mA (idle)"
+    var batteryChargePower: String? = nil  // e.g. "25.2W"
 
     // Charging
     var chargerWattage: String? = nil
     var chargerType: String? = nil
     var chargerFamily: String? = nil
     var chargerSerial: String? = nil
+    var chargerID: String? = nil  // e.g. "USB-C PD (ID: 0x0E)"
     var voltage: String? = nil
     var current: String? = nil
     var power: String? = nil
+    var adapterEfficiency: String? = nil  // e.g. "92.5% (3.5W loss)"
+    var chargingEfficiency: String? = nil  // e.g. "85.3%"
+    var chargingMode: String? = nil  // e.g. "CC/CV (Constant Current/Constant Voltage)"
+    var chargerConfig: String? = nil  // e.g. "0x0878 (bits: 0000100001111000)"
+    var notChargingReason: String? = nil  // e.g. "None (charging normally)"
+    var externalChargeCapable: String? = nil  // e.g. "Yes"
+    var adapterInput: String? = nil  // e.g. "29.4W (Real-time from PowerTelemetryData)"
 
     // USB-C PD
     var pdContract: String? = nil
@@ -83,7 +116,15 @@ struct BatteryDisplayInfo {
     var powerRole: String? = nil
     var dataRole: String? = nil
     var selectedPDO: String? = nil
+    var activeRDO: String? = nil  // e.g. "0x5364B145"
     var operatingCurrent: String? = nil
+    var maxCurrent: String? = nil  // e.g. "2.24 A (2240 mA)"
+    var portFWVersion: String? = nil  // e.g. "v3.1.0"
+    var numberOfPDOs: String? = nil  // e.g. "5"
+    var numberOfEPRPDOs: String? = nil  // e.g. "0"
+    var portMode: String? = nil  // e.g. "SNK (Sink)"
+    var powerState: String? = nil  // e.g. "5 (Active/Normal Operation)"
+    var portMaxPower: String? = nil  // e.g. "44.9 W"
     var sourceCapabilities: [String] = []
     var sinkCapabilities: [String] = []
 
@@ -94,6 +135,29 @@ struct BatteryDisplayInfo {
     // USB Ports
     var usbWakeCurrent: String? = nil
     var usbSleepCurrent: String? = nil
+
+    // Power Breakdown
+    var hasPowerMetrics: Bool = false
+    var cpuPower: String? = nil
+    var gpuPower: String? = nil
+    var anePower: String? = nil
+    var dramPower: String? = nil
+    var combinedPower: String? = nil
+    var totalSystemPower: String? = nil
+    var thermalPressure: String? = nil
+    var peakComponent: String? = nil
+    var idlePowerEstimate: String? = nil
+
+    // Real-Time Power Flow
+    var adapterPowerIn: String? = nil
+    var batteryPowerFlow: String? = nil
+    var systemLoad: String? = nil
+
+    // Power Distribution
+    var componentsPowerPct: String? = nil
+    var displayPowerPct: String? = nil
+    var otherComponentsPower: String? = nil
+    var otherComponentsPowerPct: String? = nil
 
     // Power Management
     var lowPowerMode: String? = nil
@@ -111,13 +175,27 @@ struct BatteryDisplayInfo {
         var info = BatteryDisplayInfo()
 
         // Get all data sources
-        let batteryData = IOKitBattery.getBatteryInfo()
+        var batteryData = IOKitBattery.getBatteryInfo()
         let chargerData = IOKitBattery.getChargerInfo()
         let systemInfo = SystemCommands.getSystemInfo()
-        let usbcInfo = SystemCommands.getUSBCPDInfo()
+        let usbcInfo = IOKitBattery.getUSBCPDInfoFromBattery()  // Use same function as CLI
         let displayInfo = SystemCommands.getDisplayInfo()
         let usbPortInfo = SystemCommands.getUSBPortInfo()
         let powerMgmtInfo = SystemCommands.getPowerManagementInfo()
+
+        // Get firmware version, device name, and condition from system_profiler
+        // (system_profiler is more reliable than IOPowerSources for battery health)
+        if let spBatteryDetails = SystemCommands.getBatteryDetailsFromSystemProfiler() {
+            if batteryData.firmwareVersion == nil {
+                batteryData.firmwareVersion = spBatteryDetails.firmwareVersion
+            }
+            if batteryData.deviceName == nil {
+                batteryData.deviceName = spBatteryDetails.deviceName
+            }
+            if spBatteryDetails.condition != nil {
+                batteryData.condition = spBatteryDetails.condition ?? batteryData.condition
+            }
+        }
 
         // ========== SYSTEM INFORMATION ==========
         info.macModel = systemInfo.macModel
@@ -234,11 +312,21 @@ struct BatteryDisplayInfo {
         info.batterySerial = batteryData.serialNumber
         info.manufactureDate = batteryData.manufactureDate
         info.chemistry = batteryData.chemistry
+        info.deviceName = batteryData.deviceName
+        info.firmwareVersion = batteryData.firmwareVersion
+        info.gasGaugeFirmwareVersion = batteryData.gasGaugeFirmwareVersion
 
         if let model = batteryData.batteryModel, let rev = batteryData.batteryModelRevision {
             info.batteryModel = "\(model) (rev \(rev))"
         } else if let model = batteryData.batteryModel {
             info.batteryModel = model
+        }
+
+        // Battery age
+        if let mfgDate = batteryData.manufactureDate {
+            // Calculate age from manufacture date
+            // mfgDate format is already a string, just display as-is for now
+            // TODO: Calculate actual age if we parse the date
         }
 
         // ========== ADVANCED DIAGNOSTICS ==========
@@ -327,6 +415,91 @@ struct BatteryDisplayInfo {
             info.invalidWakeTime = String(format: "%d sec (%ds)", wake, wake)
         }
 
+        if let chargeAccum = batteryData.chargeAccumulated {
+            info.chargeAccumulated = "\(chargeAccum) mAh"
+        }
+
+        if let lastQmax = batteryData.cycleCountLastQmax, lastQmax > 0 {
+            let cyclesSince = batteryData.cycleCount - lastQmax
+            info.lastCalibration = "\(cyclesSince) cycles ago (at cycle \(lastQmax))"
+        }
+
+        // ========== LIFETIME STATISTICS ==========
+        if let totalTime = batteryData.totalOperatingTime {
+            let hours = Double(totalTime) / 60.0
+            info.totalOperatingTime = String(format: "%d minutes (~%.1f hours)", totalTime, hours)
+        }
+
+        if let maxTemp = batteryData.maximumTemperature {
+            info.maximumTemperature = String(format: "%d°C", Int(maxTemp))
+        }
+
+        if let minTemp = batteryData.minimumTemperature {
+            info.minimumTemperature = String(format: "%d°C", Int(minTemp))
+        }
+
+        if let avgTemp = batteryData.averageTemperature {
+            info.averageTemperature = String(format: "%.1f°C", avgTemp)
+        }
+
+        // ========== HEALTH ASSESSMENT ==========
+        let healthScore = SystemCommands.calculateHealthScore(battery: batteryData)
+        info.healthScore = "\(healthScore.score)/100 (\(healthScore.grade) - \(healthScore.description))"
+        info.healthGrade = healthScore.grade
+        info.healthDescription = healthScore.description
+
+        // Cycle assessment
+        if batteryData.cycleCount < 100 {
+            info.cycleAssessment = "Excellent"
+        } else if batteryData.cycleCount < 300 {
+            info.cycleAssessment = "Very Good"
+        } else if batteryData.cycleCount < 500 {
+            info.cycleAssessment = "Good"
+        } else if batteryData.cycleCount < 800 {
+            info.cycleAssessment = "Fair"
+        } else {
+            info.cycleAssessment = "Aging"
+        }
+
+        // Capacity assessment
+        if batteryData.healthPercent >= 95 {
+            info.capacityAssessment = "Excellent"
+        } else if batteryData.healthPercent >= 85 {
+            info.capacityAssessment = "Very Good"
+        } else if batteryData.healthPercent >= 75 {
+            info.capacityAssessment = "Good"
+        } else if batteryData.healthPercent >= 60 {
+            info.capacityAssessment = "Fair"
+        } else {
+            info.capacityAssessment = "Poor"
+        }
+
+        // ========== ELECTRICAL INFORMATION ==========
+        // Current (Average)
+        if abs(batteryData.amperage) < 10 {
+            info.currentAvg = "0 mA (idle)"
+        } else if batteryData.amperage > 0 {
+            info.currentAvg = String(format: "+%.2fA (%d mA) (charging)", batteryData.amperage / 1000.0, Int(batteryData.amperage))
+        } else {
+            info.currentAvg = String(format: "%.2fA (%d mA) (discharging)", batteryData.amperage / 1000.0, Int(batteryData.amperage))
+        }
+
+        // Current (Instant)
+        if abs(batteryData.instantAmperage) < 10 {
+            info.currentInstant = "0 mA"
+        } else {
+            info.currentInstant = String(format: "%.2fA (%d mA)", batteryData.instantAmperage / 1000.0, Int(batteryData.instantAmperage))
+        }
+
+        // Current (Filtered) - placeholder for now
+        info.currentFiltered = "0 mA (idle)"
+
+        // Battery charge power
+        if batteryData.isCharging && batteryData.amperage > 0 {
+            let power = (batteryData.voltage * batteryData.amperage) / 1000.0
+            info.batteryChargePower = String(format: "%.1fW", power)
+        }
+
         // ========== CHARGING INFO ==========
         if let charger = chargerData {
             if charger.adapterWattage > 0 {
@@ -354,6 +527,50 @@ struct BatteryDisplayInfo {
                 info.power = String(format: "%.1fW", power)
                 info.pdContract = String(format: "%.2f V @ %.2f A (%.0f W)", voltage, current, power)
             }
+
+            // Charger ID
+            if charger.adapterID > 0 {
+                info.chargerID = String(format: "0x%02X", charger.adapterID)
+            }
+
+            // Not charging reason
+            info.notChargingReason = charger.isCharging ? "None (charging normally)" : "Not charging"
+
+            // External charge capable
+            info.externalChargeCapable = charger.externalChargeCapable ? "Yes" : "No"
+
+            // Adapter real-time power (from PowerTelemetryData)
+            if let adapterPower = batteryData.adapterPower, adapterPower > 0 {
+                info.adapterInput = String(format: "%.1fW (Real-time)", adapterPower)
+            }
+
+            // Adapter and charging efficiency
+            if let adapterPower = batteryData.adapterPower, adapterPower > 0 {
+                let batteryPower = abs((batteryData.voltage * batteryData.amperage) / 1000.0)
+
+                if batteryData.isCharging && batteryPower > 0 {
+                    let systemLoad = adapterPower - batteryPower
+                    let loss = adapterPower - batteryPower - systemLoad
+
+                    if loss > 0 {
+                        let efficiency = ((adapterPower - loss) / adapterPower) * 100.0
+                        info.adapterEfficiency = String(format: "%.1f%% (%.1fW loss)", efficiency, loss)
+                    }
+
+                    let chargingEff = (batteryPower / adapterPower) * 100.0
+                    info.chargingEfficiency = String(format: "%.1f%%", chargingEff)
+                }
+            }
+
+            // Source capabilities (from charger)
+            info.sourceCapabilities = charger.sourceCapabilities.map { pdo in
+                if pdo.isPPS {
+                    if let minV = pdo.ppsMinVoltage, let maxV = pdo.ppsMaxVoltage {
+                        return String(format: "PDO %d (PPS): %.1f-%.1fV @ %.2fA (Programmable Power Supply)", pdo.pdoNumber, minV, maxV, pdo.current)
+                    }
+                }
+                return String(format: "PDO %d: %.2f V @ %.2f A (%.1f W)", pdo.pdoNumber, pdo.voltage, pdo.current, pdo.power)
+            }
         }
 
         // ========== USB-C PD INFO ==========
@@ -370,8 +587,31 @@ struct BatteryDisplayInfo {
                 info.operatingCurrent = String(format: "%.2f A (%.0f mA)", current, current * 1000)
             }
 
-            // Source capabilities (from charger) - TODO: Get from AppleTypeCPort
-            // For now, sourceCapabilities will remain empty
+            if let maxCurr = usbc.maxCurrent {
+                info.maxCurrent = String(format: "%.2f A (%.0f mA)", maxCurr, maxCurr * 1000)
+            }
+
+            // activeRDO is already a formatted string
+            info.activeRDO = usbc.activeRDO
+
+            if let fwVersion = usbc.portFWVersion {
+                info.portFWVersion = fwVersion
+            }
+
+            info.numberOfPDOs = "\(usbc.numberOfPDOs)"
+            info.numberOfEPRPDOs = "\(usbc.numberOfEPRPDOs)"
+
+            if let mode = usbc.portMode {
+                info.portMode = mode
+            }
+
+            if let state = usbc.powerState {
+                info.powerState = "\(state) (Active/Normal Operation)"
+            }
+
+            if let maxPower = usbc.portMaxPower, maxPower > 0 {
+                info.portMaxPower = String(format: "%.1f W", maxPower)
+            }
 
             // Sink capabilities (laptop)
             info.sinkCapabilities = usbc.sinkCapabilities.map { pdo in
@@ -398,6 +638,76 @@ struct BatteryDisplayInfo {
         if let usb = usbPortInfo {
             info.usbWakeCurrent = String(format: "%.2f A (%.0f mA)", usb.wakeCurrent, usb.wakeCurrent * 1000)
             info.usbSleepCurrent = String(format: "%.2f A (%.0f mA)", usb.sleepCurrent, usb.sleepCurrent * 1000)
+        }
+
+        // ========== POWER BREAKDOWN ==========
+        // Use real-time system load from PowerTelemetryData if available
+        if let systemLoad = batteryData.systemLoadPower, systemLoad > 0 {
+            info.systemLoad = String(format: "%.1fW", systemLoad)
+        } else if !batteryData.isCharging {
+            // Fallback: On battery, system load = battery discharge power
+            let batteryPower = abs((batteryData.voltage * batteryData.amperage) / 1000.0)
+            if batteryPower > 0 {
+                info.systemLoad = String(format: "%.1fW", batteryPower)
+            }
+        } else if let adapterPower = batteryData.adapterPower, adapterPower > 0 {
+            // Fallback: Charging, system load = adapter power - battery charging power
+            let batteryChargePower = abs((batteryData.voltage * batteryData.amperage) / 1000.0)
+            let estimatedSystemLoad = adapterPower - batteryChargePower
+            if estimatedSystemLoad > 0 {
+                info.systemLoad = String(format: "%.1fW", estimatedSystemLoad)
+            }
+        }
+
+        // Get power metrics (requires sudo for full details)
+        if var powerMetrics = SystemCommands.getPowerMetrics() {
+            // Enrich with battery data for power flow calculations
+            SystemCommands.enrichPowerMetrics(&powerMetrics, battery: batteryData)
+
+            info.hasPowerMetrics = true
+            info.cpuPower = String(format: "%.1fW", powerMetrics.cpuPower)
+            info.gpuPower = String(format: "%.1fW", powerMetrics.gpuPower)
+            info.anePower = String(format: "%.1fW", powerMetrics.anePower)
+            info.dramPower = String(format: "%.1fW", powerMetrics.dramPower)
+
+            let combinedPower = powerMetrics.cpuPower + powerMetrics.gpuPower + powerMetrics.anePower + powerMetrics.dramPower
+            info.combinedPower = String(format: "%.1fW", combinedPower)
+            info.totalSystemPower = String(format: "%.1fW", powerMetrics.totalSystemPower)
+
+            if let thermal = powerMetrics.thermalPressure {
+                info.thermalPressure = thermal
+            }
+
+            let peakComponent = max(powerMetrics.cpuPower, powerMetrics.gpuPower, powerMetrics.anePower, powerMetrics.dramPower)
+            info.peakComponent = String(format: "%.1fW", peakComponent)
+
+            // Idle power estimate (when total power is very low)
+            if powerMetrics.totalSystemPower > 0 && powerMetrics.totalSystemPower < 5.0 {
+                info.idlePowerEstimate = String(format: "%.1fW", powerMetrics.totalSystemPower)
+            }
+
+            // Real-time power flow
+            info.adapterPowerIn = String(format: "%.1fW", powerMetrics.adapterPowerIn)
+            info.batteryPowerFlow = String(format: "%.1fW", powerMetrics.batteryPower)
+            info.systemLoad = String(format: "%.1fW", powerMetrics.systemLoad)
+
+            // Power distribution
+            let total = powerMetrics.systemLoad > 0 ? powerMetrics.systemLoad : powerMetrics.totalSystemPower
+            if total > 0 {
+                let componentsPct = (combinedPower / total) * 100.0
+                info.componentsPowerPct = String(format: "%.1fW (%d%%)", combinedPower, Int(componentsPct))
+
+                if let displayPower = powerMetrics.displayPower {
+                    let displayPct = (displayPower / total) * 100.0
+                    info.displayPowerPct = String(format: "%.1fW (%d%%)", displayPower, Int(displayPct))
+                }
+
+                if let otherPower = powerMetrics.otherComponentsPower {
+                    let otherPct = (otherPower / total) * 100.0
+                    info.otherComponentsPower = String(format: "%.1fW", otherPower)
+                    info.otherComponentsPowerPct = String(format: "%.1fW (%d%%)", otherPower, Int(otherPct))
+                }
+            }
         }
 
         // ========== POWER MANAGEMENT ==========
