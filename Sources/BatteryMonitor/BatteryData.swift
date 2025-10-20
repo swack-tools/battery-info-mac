@@ -106,6 +106,7 @@ struct BatteryData: Sendable {
     var adapterVoltage: Double?  // V (real-time from PowerTelemetryData)
     var adapterCurrent: Double?  // A (real-time from PowerTelemetryData)
     var adapterPower: Double?  // W (real-time from PowerTelemetryData)
+    var systemLoadPower: Double?  // W (real-time system load from PowerTelemetryData)
 
     // Computed
     var batteryPercentage: Int {

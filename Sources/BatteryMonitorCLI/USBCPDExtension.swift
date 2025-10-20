@@ -131,7 +131,8 @@ extension IOKitBattery {
         pdInfo.powerRole = "Sink"
         pdInfo.dataRole = "UFP"
 
-        return pdInfo.numberOfPDOs > 0 ? pdInfo : nil
+        // Return if we have any USB-C PD data (PDOs, sink capabilities, or PD spec)
+        return (pdInfo.numberOfPDOs > 0 || !pdInfo.sinkCapabilities.isEmpty || pdInfo.pdSpecification != nil) ? pdInfo : nil
     }
 
     /// Decode port mode

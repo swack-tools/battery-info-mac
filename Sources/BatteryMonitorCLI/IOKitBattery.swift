@@ -649,6 +649,11 @@ class IOKitBattery {
             if let adapterPower = ptd["SystemPowerIn"] as? Int {
                 data.adapterPower = Double(adapterPower) / 1000.0  // mW to W
             }
+
+            // Real-time system load (from SystemLoad)
+            if let systemLoad = ptd["SystemLoad"] as? Int {
+                data.systemLoadPower = Double(systemLoad) / 1000.0  // mW to W
+            }
         }
     }
 
