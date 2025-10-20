@@ -109,20 +109,28 @@ struct BatteryData: Sendable {
 
     // Computed
     var batteryPercentage: Int {
-        // If maxCapacity is already a percentage (0-100), use it directly
-        // This is the actual charge level from IOKit (most accurate for display)
-        if maxCapacity > 0 && maxCapacity <= 100 {
-            return maxCapacity
+        // Prefer maxCapacity when it's a percentage (0-100) and currentCapacity is also 0-100
+        // This is what macOS officially reports and rounds to user-friendly values
+        if maxCapacity > 0 && maxCapacity <= 100 && currentCapacity >= 0 && currentCapacity <= 100 {
+            return currentCapacity
         }
 
-        // Fallback: calculate from appleRawMaxCapacity (FCC in mAh) if available
+        // Use appleRawMaxCapacity (FCC in mAh) if available for mAh-based calculation
         if appleRawMaxCapacity > 0 && currentCapacity > 0 {
             return min(100, Int((Double(currentCapacity) / Double(appleRawMaxCapacity)) * 100))
         }
 
-        // Last resort: calculate from currentCapacity and maxCapacity (both in mAh)
+        // Fallback: calculate from currentCapacity and maxCapacity
+        // Note: maxCapacity can be either mAh or percentage depending on system
         guard maxCapacity > 0 else { return 0 }
-        return min(100, Int((Double(currentCapacity) / Double(maxCapacity)) * 100))
+
+        // If maxCapacity is > 100, it's in mAh, calculate percentage
+        if maxCapacity > 100 {
+            return min(100, Int((Double(currentCapacity) / Double(maxCapacity)) * 100))
+        }
+
+        // Last resort
+        return 0
     }
 
     // Get the actual FCC (Full Charge Capacity) in mAh

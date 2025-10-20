@@ -266,6 +266,20 @@ class IOKitBattery {
             data.temperature = (Double(temp) / 10.0) - 273.15
         }
 
+        // Charging status from IORegistry (more accurate than IOPowerSources)
+        if let isCharging = props["IsCharging"] as? Bool {
+            data.isCharging = isCharging
+        }
+
+        // FullyCharged flag
+        if let fullyCharged = props["FullyCharged"] as? Bool {
+            data.isCharged = fullyCharged
+            // If fully charged, override isCharging to false
+            if fullyCharged {
+                data.isCharging = false
+            }
+        }
+
         // Cycle count
         if let cycles = props["CycleCount"] as? Int {
             data.cycleCount = cycles
@@ -297,23 +311,15 @@ class IOKitBattery {
             data.nominalChargeCapacity = nominalCap
         }
 
-        // Current capacity (use AppleRawCurrentCapacity for mAh, CurrentCapacity is percentage)
-        if let rawCurrentCap = props["AppleRawCurrentCapacity"] as? Int {
-            data.currentCapacity = rawCurrentCap  // Actual mAh
-        } else if let currentCap = props["CurrentCapacity"] as? Int {
-            // Fallback: if > 200, it's likely mAh; otherwise it's percentage
-            if currentCap > 200 {
-                data.currentCapacity = currentCap
-            } else {
-                // Calculate from percentage if we have FCC
-                let fcc = data.appleRawMaxCapacity > 0 ? data.appleRawMaxCapacity : data.maxCapacity
-                if fcc > 100 {
-                    data.currentCapacity = (currentCap * fcc) / 100
-                } else {
-                    data.currentCapacity = currentCap
-                }
+        // Current capacity - keep as percentage from IOPowerSources/IORegistry
+        // Don't overwrite with AppleRawCurrentCapacity (mAh) - that's stored separately
+        if let currentCap = props["CurrentCapacity"] as? Int {
+            // CurrentCapacity is the percentage macOS reports (0-100)
+            if currentCap >= 0 && currentCap <= 100 {
+                data.currentCapacity = currentCap  // Keep as percentage
             }
         }
+        // AppleRawCurrentCapacity is available via calculation when needed
 
         // Cell voltages (check both root and BatteryData)
         var cellVoltages: [Int]? = props["CellVoltage"] as? [Int]
