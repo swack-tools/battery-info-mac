@@ -92,16 +92,8 @@ struct BatteryDetailView: View {
                     Divider()
                 }
 
-                // Cell Diagnostics
-                CellDiagnosticsSection(info: dataManager.batteryInfo)
-                Divider()
-
                 // Battery Information
                 BatteryInfoSection(info: dataManager.batteryInfo)
-                Divider()
-
-                // Battery Details (Firmware, Age, etc.)
-                BatteryDetailsSection(info: dataManager.batteryInfo)
                 Divider()
 
                 // Electrical Information
@@ -408,45 +400,6 @@ struct CapacityAnalysisSection: View {
     }
 }
 
-// MARK: - Cell Diagnostics Section
-struct CellDiagnosticsSection: View {
-    let info: BatteryDisplayInfo
-
-    var body: some View {
-        DisclosureGroup {
-            VStack(alignment: .leading, spacing: 6) {
-                if let voltages = info.cellVoltages {
-                    InfoRow(label: "Cell Voltages", value: voltages, valueColor: .cyan)
-                }
-
-                if let delta = info.cellVoltageDelta {
-                    InfoRow(label: "Cell Voltage Delta", value: delta, valueColor: .yellow)
-                }
-
-                if let count = info.cellDisconnectCount {
-                    let color: Color = count > 0 ? .red : .green
-                    InfoRow(label: "Cell Disconnect Count", value: "\(count)", valueColor: color)
-                }
-
-                if let count = info.rsenseOpenCount {
-                    let color: Color = count > 0 ? .red : .green
-                    InfoRow(label: "R-sense Open Count", value: "\(count)", valueColor: color)
-                }
-            }
-            .padding(.top, 8)
-        } label: {
-            HStack {
-                Image(systemName: "circlebadge.2.fill")
-                    .foregroundColor(.yellow)
-                    .font(.system(size: sectionHeaderFontSize))
-                Text("Cell Diagnostics")
-                    .font(.system(size: sectionHeaderFontSize))
-                    .fontWeight(.semibold)
-            }
-        }
-    }
-}
-
 // MARK: - Battery Info Section
 struct BatteryInfoSection: View {
     let info: BatteryDisplayInfo
@@ -470,8 +423,24 @@ struct BatteryInfoSection: View {
                     InfoRow(label: "Manufacture Date", value: date)
                 }
 
+                if let age = info.batteryAge {
+                    InfoRow(label: "Battery Age", value: age)
+                }
+
                 if let chem = info.chemistry {
                     InfoRow(label: "Chemistry", value: chem, valueColor: .green)
+                }
+
+                if let deviceName = info.deviceName {
+                    InfoRow(label: "Device Name", value: deviceName, valueColor: .cyan)
+                }
+
+                if let firmware = info.firmwareVersion {
+                    InfoRow(label: "Firmware Version", value: firmware)
+                }
+
+                if let gasGauge = info.gasGaugeFirmwareVersion {
+                    InfoRow(label: "Gas Gauge FW", value: gasGauge)
                 }
             }
             .padding(.top, 8)
@@ -1028,40 +997,6 @@ struct PowerBreakdownSection: View {
                     .foregroundColor(.orange)
                     .font(.system(size: sectionHeaderFontSize))
                 Text("Power Breakdown")
-                    .font(.system(size: sectionHeaderFontSize))
-                    .fontWeight(.semibold)
-            }
-        }
-    }
-}
-
-// MARK: - Battery Details Section
-struct BatteryDetailsSection: View {
-    let info: BatteryDisplayInfo
-
-    var body: some View {
-        DisclosureGroup {
-            VStack(alignment: .leading, spacing: 6) {
-                if let deviceName = info.deviceName {
-                    InfoRow(label: "Device Name", value: deviceName, valueColor: .cyan)
-                }
-                if let firmware = info.firmwareVersion {
-                    InfoRow(label: "Firmware Version", value: firmware)
-                }
-                if let gasGauge = info.gasGaugeFirmwareVersion {
-                    InfoRow(label: "Gas Gauge FW", value: gasGauge)
-                }
-                if let age = info.batteryAge {
-                    InfoRow(label: "Battery Age", value: age)
-                }
-            }
-            .padding(.top, 8)
-        } label: {
-            HStack {
-                Image(systemName: "info.circle.fill")
-                    .foregroundColor(.blue)
-                    .font(.system(size: sectionHeaderFontSize))
-                Text("Battery Details")
                     .font(.system(size: sectionHeaderFontSize))
                     .fontWeight(.semibold)
             }
