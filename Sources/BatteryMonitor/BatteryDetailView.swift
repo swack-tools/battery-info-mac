@@ -1,5 +1,8 @@
 import SwiftUI
 
+// MARK: - Constants
+private let sectionHeaderFontSize: CGFloat = 17
+
 // MARK: - Custom Disclosure Group Style
 struct FullWidthDisclosureStyle: DisclosureGroupStyle {
     func makeBody(configuration: Configuration) -> some View {
@@ -11,7 +14,6 @@ struct FullWidthDisclosureStyle: DisclosureGroupStyle {
             }) {
                 HStack {
                     configuration.label
-                        .font(.subheadline)
                     Spacer()
                     Image(systemName: "chevron.right")
                         .rotationEffect(.degrees(configuration.isExpanded ? 90 : 0))
@@ -98,20 +100,40 @@ struct BatteryDetailView: View {
                 BatteryInfoSection(info: dataManager.batteryInfo)
                 Divider()
 
+                // Battery Details (Firmware, Age, etc.)
+                BatteryDetailsSection(info: dataManager.batteryInfo)
+                Divider()
+
+                // Electrical Information
+                ElectricalInformationSection(info: dataManager.batteryInfo)
+                Divider()
+
                 // Charging/Power Source
                 if dataManager.batteryInfo.isPluggedIn {
                     ChargingInfoSection(info: dataManager.batteryInfo)
                     Divider()
                 }
 
-                // USB-C Power Delivery
-                if dataManager.batteryInfo.isPluggedIn {
-                    USBCPowerDeliverySection(info: dataManager.batteryInfo)
+                // USB-C Power Delivery (always show - has sink capabilities even when unplugged)
+                USBCPowerDeliverySection(info: dataManager.batteryInfo)
+                Divider()
+
+                // Power Breakdown
+                if dataManager.batteryInfo.hasPowerMetrics {
+                    PowerBreakdownSection(info: dataManager.batteryInfo)
                     Divider()
                 }
 
                 // Advanced Diagnostics
                 AdvancedDiagnosticsSection(info: dataManager.batteryInfo)
+                Divider()
+
+                // Lifetime Statistics
+                LifetimeStatisticsSection(info: dataManager.batteryInfo)
+                Divider()
+
+                // Health Assessment
+                HealthAssessmentSection(info: dataManager.batteryInfo)
                 Divider()
 
                 // Display
@@ -160,9 +182,9 @@ struct SystemInfoSection: View {
             HStack {
                 Image(systemName: "desktopcomputer")
                     .foregroundColor(.blue)
-                    .font(.title3)
+                    .font(.system(size: sectionHeaderFontSize))
                 Text("System Information")
-                    .font(.title3)
+                    .font(.system(size: sectionHeaderFontSize))
                     .fontWeight(.semibold)
             }
         }
@@ -176,9 +198,14 @@ struct StatusSummarySection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Status")
-                .font(.headline)
-                .foregroundColor(.primary)
+            HStack {
+                Image(systemName: "info.circle.fill")
+                    .foregroundColor(.blue)
+                    .font(.system(size: sectionHeaderFontSize))
+                Text("Status")
+                    .font(.system(size: sectionHeaderFontSize))
+                    .fontWeight(.semibold)
+            }
 
             // Battery status card with gradient background
             HStack {
@@ -349,9 +376,9 @@ struct BatteryHealthSection: View {
             HStack {
                 Image(systemName: "heart.fill")
                     .foregroundColor(.pink)
-                    .font(.title3)
+                    .font(.system(size: sectionHeaderFontSize))
                 Text("Battery Health")
-                    .font(.title3)
+                    .font(.system(size: sectionHeaderFontSize))
                     .fontWeight(.semibold)
             }
         }
@@ -376,9 +403,9 @@ struct CapacityAnalysisSection: View {
             HStack {
                 Image(systemName: "chart.bar.fill")
                     .foregroundColor(.teal)
-                    .font(.title3)
+                    .font(.system(size: sectionHeaderFontSize))
                 Text("Capacity Analysis")
-                    .font(.title3)
+                    .font(.system(size: sectionHeaderFontSize))
                     .fontWeight(.semibold)
             }
         }
@@ -415,9 +442,9 @@ struct CellDiagnosticsSection: View {
             HStack {
                 Image(systemName: "circlebadge.2.fill")
                     .foregroundColor(.yellow)
-                    .font(.title3)
+                    .font(.system(size: sectionHeaderFontSize))
                 Text("Cell Diagnostics")
-                    .font(.title3)
+                    .font(.system(size: sectionHeaderFontSize))
                     .fontWeight(.semibold)
             }
         }
@@ -456,9 +483,9 @@ struct BatteryInfoSection: View {
             HStack {
                 Image(systemName: "info.circle.fill")
                     .foregroundColor(.blue)
-                    .font(.title3)
+                    .font(.system(size: sectionHeaderFontSize))
                 Text("Battery Information")
-                    .font(.title3)
+                    .font(.system(size: sectionHeaderFontSize))
                     .fontWeight(.semibold)
             }
         }
@@ -505,9 +532,9 @@ struct ChargingInfoSection: View {
             HStack {
                 Image(systemName: "bolt.fill")
                     .foregroundColor(.green)
-                    .font(.title3)
+                    .font(.system(size: sectionHeaderFontSize))
                 Text("Charger Information")
-                    .font(.title3)
+                    .font(.system(size: sectionHeaderFontSize))
                     .fontWeight(.semibold)
             }
         }
@@ -545,31 +572,93 @@ struct USBCPowerDeliverySection: View {
                     InfoRow(label: "Operating Current", value: current)
                 }
 
-                // Source Capabilities
-                if !info.sourceCapabilities.isEmpty {
-                    Text("Source Capabilities (Charger)")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .padding(.top, 8)
+                if let maxCurr = info.maxCurrent {
+                    InfoRow(label: "Max Current", value: maxCurr)
+                }
 
-                    ForEach(info.sourceCapabilities, id: \.self) { cap in
-                        Text(cap)
+                if let rdo = info.activeRDO {
+                    InfoRow(label: "Active RDO", value: rdo, valueColor: .cyan)
+                }
+
+                if let fwVer = info.portFWVersion {
+                    InfoRow(label: "Port FW Version", value: fwVer)
+                }
+
+                if let numPDOs = info.numberOfPDOs {
+                    InfoRow(label: "Number of PDOs", value: numPDOs)
+                }
+
+                if let numEPR = info.numberOfEPRPDOs {
+                    InfoRow(label: "Number of EPR PDOs", value: numEPR)
+                }
+
+                if let mode = info.portMode {
+                    InfoRow(label: "Port Mode", value: mode, valueColor: .blue)
+                }
+
+                if let state = info.powerState {
+                    InfoRow(label: "Power State", value: state, valueColor: .green)
+                }
+
+                if let maxPower = info.portMaxPower {
+                    InfoRow(label: "Port Max Power", value: maxPower, valueColor: .orange)
+                }
+
+                // Source Capabilities (Charger)
+                Divider()
+                    .padding(.vertical, 8)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Image(systemName: "powerplug.fill")
+                            .foregroundColor(.green)
+                            .font(.caption)
+                        Text("Source Capabilities (Charger)")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                    }
+
+                    if info.sourceCapabilities.isEmpty {
+                        Text("Not available")
                             .font(.caption)
                             .foregroundColor(.secondary)
+                            .padding(.leading, 20)
+                    } else {
+                        ForEach(info.sourceCapabilities, id: \.self) { cap in
+                            Text(cap)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .padding(.leading, 20)
+                        }
                     }
                 }
 
-                // Sink Capabilities
-                if !info.sinkCapabilities.isEmpty {
-                    Text("Sink Capabilities (Laptop)")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .padding(.top, 8)
+                // Sink Capabilities (Laptop)
+                Divider()
+                    .padding(.vertical, 8)
 
-                    ForEach(info.sinkCapabilities, id: \.self) { cap in
-                        Text(cap)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Image(systemName: "laptopcomputer")
+                            .foregroundColor(.blue)
+                            .font(.caption)
+                        Text("Sink Capabilities (Laptop)")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                    }
+
+                    if info.sinkCapabilities.isEmpty {
+                        Text("Not available")
                             .font(.caption)
                             .foregroundColor(.secondary)
+                            .padding(.leading, 20)
+                    } else {
+                        ForEach(info.sinkCapabilities, id: \.self) { cap in
+                            Text(cap)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .padding(.leading, 20)
+                        }
                     }
                 }
             }
@@ -578,9 +667,9 @@ struct USBCPowerDeliverySection: View {
             HStack {
                 Image(systemName: "cable.connector")
                     .foregroundColor(.purple)
-                    .font(.title3)
+                    .font(.system(size: sectionHeaderFontSize))
                 Text("USB-C Power Delivery")
-                    .font(.title3)
+                    .font(.system(size: sectionHeaderFontSize))
                     .fontWeight(.semibold)
             }
         }
@@ -663,9 +752,9 @@ struct AdvancedDiagnosticsSection: View {
             HStack {
                 Image(systemName: "stethoscope")
                     .foregroundColor(.red)
-                    .font(.title3)
+                    .font(.system(size: sectionHeaderFontSize))
                 Text("Advanced Diagnostics")
-                    .font(.title3)
+                    .font(.system(size: sectionHeaderFontSize))
                     .fontWeight(.semibold)
             }
         }
@@ -692,9 +781,9 @@ struct DisplaySection: View {
             HStack {
                 Image(systemName: "display")
                     .foregroundColor(.cyan)
-                    .font(.title3)
+                    .font(.system(size: sectionHeaderFontSize))
                 Text("Display")
-                    .font(.title3)
+                    .font(.system(size: sectionHeaderFontSize))
                     .fontWeight(.semibold)
             }
         }
@@ -721,9 +810,9 @@ struct USBPortsSection: View {
             HStack {
                 Image(systemName: "cable.connector.horizontal")
                     .foregroundColor(.purple)
-                    .font(.title3)
+                    .font(.system(size: sectionHeaderFontSize))
                 Text("USB Ports")
-                    .font(.title3)
+                    .font(.system(size: sectionHeaderFontSize))
                     .fontWeight(.semibold)
             }
         }
@@ -818,9 +907,270 @@ struct PowerManagementSection: View {
             HStack {
                 Image(systemName: "power")
                     .foregroundColor(.orange)
-                    .font(.title3)
+                    .font(.system(size: sectionHeaderFontSize))
                 Text("Power Management")
-                    .font(.title3)
+                    .font(.system(size: sectionHeaderFontSize))
+                    .fontWeight(.semibold)
+            }
+        }
+    }
+}
+
+// MARK: - Power Breakdown Section
+struct PowerBreakdownSection: View {
+    let info: BatteryDisplayInfo
+    @Environment(\.colorScheme) var colorScheme
+
+    var body: some View {
+        DisclosureGroup {
+            VStack(alignment: .leading, spacing: 12) {
+                // Component Power
+                VStack(alignment: .leading, spacing: 6) {
+                    if let cpu = info.cpuPower {
+                        InfoRow(label: "CPU Power", value: cpu, valueColor: .orange)
+                    }
+                    if let gpu = info.gpuPower {
+                        InfoRow(label: "GPU Power", value: gpu, valueColor: .orange)
+                    }
+                    if let ane = info.anePower {
+                        InfoRow(label: "ANE Power", value: ane, valueColor: .orange)
+                    }
+                    if let dram = info.dramPower {
+                        InfoRow(label: "DRAM Power", value: dram, valueColor: .orange)
+                    }
+                    if let combined = info.combinedPower {
+                        InfoRow(label: "Combined Power", value: combined, valueColor: .orange)
+                    }
+                    if let total = info.totalSystemPower {
+                        InfoRow(label: "Total System Power", value: total, valueColor: .orange)
+                    }
+
+                    if let thermal = info.thermalPressure {
+                        let thermalColor: Color = {
+                            switch thermal.lowercased() {
+                            case "nominal", "normal": return .green
+                            case "light", "moderate": return .yellow
+                            case "heavy": return .red
+                            default: return .primary
+                            }
+                        }()
+                        InfoRow(label: "Thermal Pressure", value: thermal, valueColor: thermalColor)
+                    }
+
+                    if let peak = info.peakComponent {
+                        InfoRow(label: "Peak Component", value: peak, valueColor: .orange)
+                    }
+
+                    if let idle = info.idlePowerEstimate {
+                        InfoRow(label: "Idle Power (est)", value: idle, valueColor: .green)
+                    }
+                }
+
+                // Real-Time Power Flow
+                if info.adapterPowerIn != nil || info.batteryPowerFlow != nil || info.systemLoad != nil {
+                    Divider()
+                    Text("Real-Time Power Flow")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .padding(.top, 4)
+
+                    if let adapter = info.adapterPowerIn {
+                        InfoRow(label: "  Adapter Power In", value: adapter, valueColor: .green)
+                    }
+                    if let battery = info.batteryPowerFlow {
+                        let batteryValue = Double(battery.replacingOccurrences(of: "W", with: "")) ?? 0.0
+                        let batteryColor: Color = batteryValue > 0 ? .green : .red
+                        let displayValue = batteryValue > 0 ? "+\(battery)" : battery
+                        InfoRow(label: "  Battery Power", value: displayValue, valueColor: batteryColor)
+                    }
+                    if let load = info.systemLoad {
+                        InfoRow(label: "  System Load", value: load, valueColor: .orange)
+                    }
+                }
+
+                // Power Distribution
+                if info.componentsPowerPct != nil || info.displayPowerPct != nil || info.otherComponentsPowerPct != nil {
+                    Divider()
+                    Text("Power Distribution")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .padding(.top, 4)
+
+                    if let components = info.componentsPowerPct {
+                        VStack(alignment: .leading, spacing: 2) {
+                            InfoRow(label: "  Components", value: components, valueColor: .orange)
+                            Text("    CPU/GPU/ANE/DRAM")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    if let display = info.displayPowerPct {
+                        VStack(alignment: .leading, spacing: 2) {
+                            InfoRow(label: "  Display", value: display, valueColor: .orange)
+                            if let brightness = info.displayBrightness {
+                                Text("    Backlight @ \(brightness)")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+
+                    if let other = info.otherComponentsPowerPct {
+                        VStack(alignment: .leading, spacing: 2) {
+                            InfoRow(label: "  Other Components", value: other, valueColor: .orange)
+                            Text("    SSD, WiFi, Thunderbolt, USB, etc.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    if let total = info.systemLoad {
+                        InfoRow(label: "  Total System Load", value: total, valueColor: .primary)
+                            .fontWeight(.semibold)
+                    }
+                }
+            }
+        } label: {
+            HStack {
+                Image(systemName: "bolt.circle.fill")
+                    .foregroundColor(.orange)
+                    .font(.system(size: sectionHeaderFontSize))
+                Text("Power Breakdown")
+                    .font(.system(size: sectionHeaderFontSize))
+                    .fontWeight(.semibold)
+            }
+        }
+    }
+}
+
+// MARK: - Battery Details Section
+struct BatteryDetailsSection: View {
+    let info: BatteryDisplayInfo
+
+    var body: some View {
+        DisclosureGroup {
+            VStack(alignment: .leading, spacing: 6) {
+                if let deviceName = info.deviceName {
+                    InfoRow(label: "Device Name", value: deviceName, valueColor: .cyan)
+                }
+                if let firmware = info.firmwareVersion {
+                    InfoRow(label: "Firmware Version", value: firmware)
+                }
+                if let gasGauge = info.gasGaugeFirmwareVersion {
+                    InfoRow(label: "Gas Gauge FW", value: gasGauge)
+                }
+                if let age = info.batteryAge {
+                    InfoRow(label: "Battery Age", value: age)
+                }
+            }
+            .padding(.top, 8)
+        } label: {
+            HStack {
+                Image(systemName: "info.circle.fill")
+                    .foregroundColor(.blue)
+                    .font(.system(size: sectionHeaderFontSize))
+                Text("Battery Details")
+                    .font(.system(size: sectionHeaderFontSize))
+                    .fontWeight(.semibold)
+            }
+        }
+    }
+}
+
+// MARK: - Electrical Information Section
+struct ElectricalInformationSection: View {
+    let info: BatteryDisplayInfo
+
+    var body: some View {
+        DisclosureGroup {
+            VStack(alignment: .leading, spacing: 6) {
+                if let voltage = info.voltage {
+                    InfoRow(label: "Voltage", value: voltage, valueColor: .orange)
+                }
+                if let current = info.currentAvg {
+                    InfoRow(label: "Current (Avg)", value: current, valueColor: .purple)
+                }
+                if let currentInst = info.currentInstant {
+                    InfoRow(label: "Current (Instant)", value: currentInst, valueColor: .purple)
+                }
+                if let batteryPower = info.batteryChargePower {
+                    InfoRow(label: "Battery Charge Power", value: batteryPower, valueColor: .green)
+                }
+            }
+            .padding(.top, 8)
+        } label: {
+            HStack {
+                Image(systemName: "bolt.fill")
+                    .foregroundColor(.yellow)
+                    .font(.system(size: sectionHeaderFontSize))
+                Text("Electrical Information")
+                    .font(.system(size: sectionHeaderFontSize))
+                    .fontWeight(.semibold)
+            }
+        }
+    }
+}
+
+// MARK: - Lifetime Statistics Section
+struct LifetimeStatisticsSection: View {
+    let info: BatteryDisplayInfo
+
+    var body: some View {
+        DisclosureGroup {
+            VStack(alignment: .leading, spacing: 6) {
+                if let operatingTime = info.totalOperatingTime {
+                    InfoRow(label: "Total Operating Time", value: operatingTime, valueColor: .blue)
+                }
+                if let maxTemp = info.maximumTemperature {
+                    InfoRow(label: "Maximum Temperature", value: maxTemp, valueColor: .red)
+                }
+                if let minTemp = info.minimumTemperature {
+                    InfoRow(label: "Minimum Temperature", value: minTemp, valueColor: .cyan)
+                }
+                if let avgTemp = info.averageTemperature {
+                    InfoRow(label: "Average Temperature", value: avgTemp, valueColor: .orange)
+                }
+            }
+            .padding(.top, 8)
+        } label: {
+            HStack {
+                Image(systemName: "chart.line.uptrend.xyaxis")
+                    .foregroundColor(.purple)
+                    .font(.system(size: sectionHeaderFontSize))
+                Text("Lifetime Statistics")
+                    .font(.system(size: sectionHeaderFontSize))
+                    .fontWeight(.semibold)
+            }
+        }
+    }
+}
+
+// MARK: - Health Assessment Section
+struct HealthAssessmentSection: View {
+    let info: BatteryDisplayInfo
+
+    var body: some View {
+        DisclosureGroup {
+            VStack(alignment: .leading, spacing: 6) {
+                if let healthScore = info.healthScore {
+                    InfoRow(label: "Battery Health Score", value: healthScore, valueColor: .green)
+                }
+                if let cycleAssess = info.cycleAssessment {
+                    InfoRow(label: "Cycle Count", value: cycleAssess, valueColor: .blue)
+                }
+                if let capAssess = info.capacityAssessment {
+                    InfoRow(label: "Capacity", value: capAssess, valueColor: .green)
+                }
+            }
+            .padding(.top, 8)
+        } label: {
+            HStack {
+                Image(systemName: "heart.text.square.fill")
+                    .foregroundColor(.pink)
+                    .font(.system(size: sectionHeaderFontSize))
+                Text("Health Assessment")
+                    .font(.system(size: sectionHeaderFontSize))
                     .fontWeight(.semibold)
             }
         }
