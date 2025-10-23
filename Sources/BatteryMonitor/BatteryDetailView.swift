@@ -1,14 +1,27 @@
 import SwiftUI
 
 // MARK: - Constants
-private let sectionHeaderFontSize: CGFloat = 17
+private let sectionHeaderFontSize: CGFloat = 18
+
+// MARK: - Custom Font Styles
+extension Font {
+    static let appTitle = Font.system(size: 28, weight: .bold, design: .rounded)
+    static let sectionHeader = Font.system(size: 18, weight: .semibold, design: .default)
+    static let batteryPercent = Font.system(size: 36, weight: .heavy, design: .rounded)
+    static let infoLabel = Font.system(size: 14, weight: .regular, design: .default)
+    static let infoValue = Font.system(size: 14, weight: .semibold, design: .default)
+    static let caption = Font.system(size: 12, weight: .regular, design: .default)
+    static let buttonText = Font.system(size: 14, weight: .medium, design: .default)
+}
 
 // MARK: - Custom Disclosure Group Style
 struct FullWidthDisclosureStyle: DisclosureGroupStyle {
+    @Environment(\.colorScheme) var colorScheme
+
     func makeBody(configuration: Configuration) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Button(action: {
-                withAnimation {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                     configuration.isExpanded.toggle()
                 }
             }) {
@@ -18,16 +31,46 @@ struct FullWidthDisclosureStyle: DisclosureGroupStyle {
                     Image(systemName: "chevron.right")
                         .rotationEffect(.degrees(configuration.isExpanded ? 90 : 0))
                         .font(.caption)
+                        .fontWeight(.semibold)
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .foregroundColor(.primary)
+            .padding(.vertical, 10)
+            .padding(.horizontal, 14)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(colorScheme == .dark
+                        ? Color.white.opacity(0.05)
+                        : Color.black.opacity(0.03))
+            )
 
             if configuration.isExpanded {
                 configuration.content
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .transition(.asymmetric(
+                        insertion: .opacity.combined(with: .move(edge: .top)),
+                        removal: .opacity
+                    ))
             }
         }
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(colorScheme == .dark
+                    ? Color.white.opacity(0.03)
+                    : Color.white.opacity(0.5))
+                .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.3 : 0.1),
+                       radius: 8, x: 0, y: 2)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(colorScheme == .dark
+                    ? Color.white.opacity(0.1)
+                    : Color.black.opacity(0.05),
+                    lineWidth: 1)
+        )
     }
 }
 
@@ -37,113 +80,161 @@ struct BatteryDetailView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                // Header with gradient background
+            VStack(alignment: .leading, spacing: 16) {
+                // Enhanced header with glassmorphism
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Image(systemName: "bolt.batteryblock.fill")
                             .font(.title2)
-                            .foregroundColor(.blue)
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [.blue, .cyan],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .shadow(color: .blue.opacity(0.3), radius: 2, x: 0, y: 1)
                         Text("Battery Monitor")
-                            .font(.title2)
-                            .fontWeight(.bold)
+                            .font(.appTitle)
+                            .tracking(0.5)
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [.primary, .blue.opacity(0.8)],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
                         Spacer()
-                        Button(action: { dataManager.refresh() }) {
+                        Button(action: {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                                dataManager.refresh()
+                            }
+                        }) {
                             Image(systemName: "arrow.clockwise")
                                 .foregroundColor(.blue)
+                                .font(.system(size: 16, weight: .semibold))
                         }
                         .buttonStyle(.borderless)
+                        .scaleEffect(dataManager.lastUpdate.timeIntervalSinceNow > -1 ? 1.1 : 1.0)
                     }
 
                     Text("Updated: \(formatTime(dataManager.lastUpdate))")
                         .font(.caption)
                         .foregroundColor(.secondary)
+                        .tracking(0.3)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 14)
                 .background(
-                    LinearGradient(
-                        colors: colorScheme == .dark
-                            ? [Color.blue.opacity(0.2), Color.purple.opacity(0.2)]
-                            : [Color.blue.opacity(0.1), Color.purple.opacity(0.1)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .cornerRadius(10)
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(
+                                LinearGradient(
+                                    colors: colorScheme == .dark
+                                        ? [Color.blue.opacity(0.25), Color.purple.opacity(0.25)]
+                                        : [Color.blue.opacity(0.15), Color.purple.opacity(0.15)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
 
-                Divider()
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(colorScheme == .dark
+                                ? Color.white.opacity(0.05)
+                                : Color.white.opacity(0.3))
+                            .blur(radius: 1)
+                    }
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(
+                            LinearGradient(
+                                colors: colorScheme == .dark
+                                    ? [Color.blue.opacity(0.3), Color.purple.opacity(0.3)]
+                                    : [Color.blue.opacity(0.2), Color.purple.opacity(0.2)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1.5
+                        )
+                )
+                .shadow(color: Color.blue.opacity(0.2), radius: 10, x: 0, y: 4)
+                .shadow(color: Color.purple.opacity(0.1), radius: 20, x: 0, y: 8)
 
                 // System Information
                 SystemInfoSection(info: dataManager.batteryInfo)
-                Divider()
 
                 // Battery Status Summary
                 StatusSummarySection(info: dataManager.batteryInfo)
-                Divider()
 
                 // Battery Health
                 BatteryHealthSection(info: dataManager.batteryInfo)
-                Divider()
 
                 // Capacity Analysis
                 if !dataManager.batteryInfo.capacityAnalysis.isEmpty {
                     CapacityAnalysisSection(info: dataManager.batteryInfo)
-                    Divider()
                 }
 
                 // Battery Information
                 BatteryInfoSection(info: dataManager.batteryInfo)
-                Divider()
 
                 // Electrical Information
                 ElectricalInformationSection(info: dataManager.batteryInfo)
-                Divider()
 
                 // Charging/Power Source
                 if dataManager.batteryInfo.isPluggedIn {
                     ChargingInfoSection(info: dataManager.batteryInfo)
-                    Divider()
                 }
 
                 // USB-C Power Delivery (always show - has sink capabilities even when unplugged)
                 USBCPowerDeliverySection(info: dataManager.batteryInfo)
-                Divider()
 
                 // Power Breakdown
                 if dataManager.batteryInfo.hasPowerMetrics {
                     PowerBreakdownSection(info: dataManager.batteryInfo)
-                    Divider()
                 }
 
                 // Advanced Diagnostics
                 AdvancedDiagnosticsSection(info: dataManager.batteryInfo)
-                Divider()
 
                 // Lifetime Statistics
                 LifetimeStatisticsSection(info: dataManager.batteryInfo)
-                Divider()
 
                 // Health Assessment
                 HealthAssessmentSection(info: dataManager.batteryInfo)
-                Divider()
 
                 // USB Ports
                 USBPortsSection(info: dataManager.batteryInfo)
-                Divider()
 
                 // Power Management
                 PowerManagementSection(info: dataManager.batteryInfo)
-                Divider()
 
                 // Quick Actions
                 QuickActionsSection()
             }
-            .padding()
+            .padding(20)
             .disclosureGroupStyle(FullWidthDisclosureStyle())
         }
-        .frame(width: 500, height: 700)
-        .background(colorScheme == .dark ? Color(nsColor: .windowBackgroundColor) : Color(nsColor: .controlBackgroundColor))
+        .frame(width: 540, height: 720)
+        .background(
+            ZStack {
+                (colorScheme == .dark
+                    ? Color(nsColor: .windowBackgroundColor)
+                    : Color(red: 0.95, green: 0.96, blue: 0.97))
+
+                if colorScheme != .dark {
+                    LinearGradient(
+                        colors: [
+                            Color.blue.opacity(0.03),
+                            Color.purple.opacity(0.03),
+                            Color.clear
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                }
+            }
+        )
     }
 
     func formatTime(_ date: Date) -> String {
@@ -172,8 +263,8 @@ struct SystemInfoSection: View {
                     .foregroundColor(.blue)
                     .font(.system(size: sectionHeaderFontSize))
                 Text("System Information")
-                    .font(.system(size: sectionHeaderFontSize))
-                    .fontWeight(.semibold)
+                    .font(.sectionHeader)
+                    .tracking(0.3)
             }
         }
     }
@@ -191,24 +282,38 @@ struct StatusSummarySection: View {
                     .foregroundColor(.blue)
                     .font(.system(size: sectionHeaderFontSize))
                 Text("Status")
-                    .font(.system(size: sectionHeaderFontSize))
-                    .fontWeight(.semibold)
+                    .font(.sectionHeader)
+                    .tracking(0.3)
             }
 
-            // Battery status card with gradient background
-            HStack {
+            // Enhanced battery status card with glassmorphism
+            HStack(spacing: 16) {
                 Image(systemName: batteryIcon)
-                    .font(.system(size: 40))
-                    .foregroundColor(batteryColor)
+                    .font(.system(size: 48))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [batteryColor, batteryColor.opacity(0.7)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .shadow(color: batteryColor.opacity(0.3), radius: 4, x: 0, y: 2)
 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 6) {
                     Text("\(info.percentage)%")
-                        .font(.title)
-                        .fontWeight(.bold)
-                        .foregroundColor(batteryColor)
+                        .font(.batteryPercent)
+                        .tracking(1.0)
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [batteryColor, batteryColor.opacity(0.8)],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
 
                     Text(info.statusText)
-                        .font(.subheadline)
+                        .font(.infoValue)
+                        .tracking(0.2)
                         .foregroundColor(.secondary)
 
                     if let timeRemaining = info.timeRemaining {
@@ -220,11 +325,40 @@ struct StatusSummarySection: View {
 
                 Spacer()
             }
-            .padding()
+            .padding(16)
             .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(batteryColor.opacity(colorScheme == .dark ? 0.2 : 0.1))
+                ZStack {
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(
+                            LinearGradient(
+                                colors: colorScheme == .dark
+                                    ? [batteryColor.opacity(0.25), batteryColor.opacity(0.15)]
+                                    : [batteryColor.opacity(0.15), batteryColor.opacity(0.08)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(colorScheme == .dark
+                            ? Color.white.opacity(0.03)
+                            : Color.white.opacity(0.4))
+                        .blur(radius: 0.5)
+                }
             )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(
+                        LinearGradient(
+                            colors: [batteryColor.opacity(0.4), batteryColor.opacity(0.2)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1.5
+                    )
+            )
+            .shadow(color: batteryColor.opacity(0.2), radius: 10, x: 0, y: 4)
+            .shadow(color: batteryColor.opacity(0.1), radius: 20, x: 0, y: 8)
 
             InfoRow(label: "Power Source", value: info.powerSource, valueColor: info.isPluggedIn ? .green : .primary)
 
@@ -366,8 +500,8 @@ struct BatteryHealthSection: View {
                     .foregroundColor(.pink)
                     .font(.system(size: sectionHeaderFontSize))
                 Text("Battery Health")
-                    .font(.system(size: sectionHeaderFontSize))
-                    .fontWeight(.semibold)
+                    .font(.sectionHeader)
+                    .tracking(0.3)
             }
         }
     }
@@ -379,11 +513,33 @@ struct CapacityAnalysisSection: View {
 
     var body: some View {
         DisclosureGroup {
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(info.capacityAnalysis, id: \.self) { line in
-                    Text(line)
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundColor(.secondary)
+            VStack(alignment: .leading, spacing: 6) {
+                if info.designCapacity > 0 {
+                    InfoRow(label: "Design (factory)",
+                           value: "\(info.designCapacity) mAh (100%)")
+                }
+
+                if info.nominalCapacity > 0 && info.designCapacity > 0 {
+                    let diff = info.nominalCapacity - info.designCapacity
+                    let pct = (Double(info.nominalCapacity) / Double(info.designCapacity)) * 100.0
+                    InfoRow(label: "Nominal (rated)",
+                           value: String(format: "%d mAh (%.1f%%) [%+d mAh]",
+                                       info.nominalCapacity, pct, diff))
+                }
+
+                if info.fullChargeCapacity > 0 && info.designCapacity > 0 {
+                    let diff = info.fullChargeCapacity - info.designCapacity
+                    let pct = (Double(info.fullChargeCapacity) / Double(info.designCapacity)) * 100.0
+                    let color: Color = {
+                        if pct >= 95 { return .green }
+                        else if pct >= 85 { return .yellow }
+                        else if pct >= 80 { return .orange }
+                        else { return .red }
+                    }()
+                    InfoRow(label: "Current Max (FCC)",
+                           value: String(format: "%d mAh (%.1f%%) [%+d mAh]",
+                                       info.fullChargeCapacity, pct, diff),
+                           valueColor: color)
                 }
             }
             .padding(.top, 8)
@@ -393,8 +549,8 @@ struct CapacityAnalysisSection: View {
                     .foregroundColor(.teal)
                     .font(.system(size: sectionHeaderFontSize))
                 Text("Capacity Analysis")
-                    .font(.system(size: sectionHeaderFontSize))
-                    .fontWeight(.semibold)
+                    .font(.sectionHeader)
+                    .tracking(0.3)
             }
         }
     }
@@ -450,8 +606,8 @@ struct BatteryInfoSection: View {
                     .foregroundColor(.blue)
                     .font(.system(size: sectionHeaderFontSize))
                 Text("Battery Information")
-                    .font(.system(size: sectionHeaderFontSize))
-                    .fontWeight(.semibold)
+                    .font(.sectionHeader)
+                    .tracking(0.3)
             }
         }
     }
@@ -523,8 +679,8 @@ struct ChargingInfoSection: View {
                     .foregroundColor(.green)
                     .font(.system(size: sectionHeaderFontSize))
                 Text("Charger Information")
-                    .font(.system(size: sectionHeaderFontSize))
-                    .fontWeight(.semibold)
+                    .font(.sectionHeader)
+                    .tracking(0.3)
             }
         }
     }
@@ -658,8 +814,8 @@ struct USBCPowerDeliverySection: View {
                     .foregroundColor(.purple)
                     .font(.system(size: sectionHeaderFontSize))
                 Text("USB-C Power Delivery")
-                    .font(.system(size: sectionHeaderFontSize))
-                    .fontWeight(.semibold)
+                    .font(.sectionHeader)
+                    .tracking(0.3)
             }
         }
     }
@@ -674,66 +830,136 @@ struct AdvancedDiagnosticsSection: View {
             VStack(alignment: .leading, spacing: 6) {
                 if let resistance = info.internalResistance {
                     if let quality = info.internalResistanceQuality {
-                        InfoRow(label: "Internal Resistance", value: "\(resistance) (\(quality))")
+                        let color: Color = {
+                            if quality.lowercased().contains("good") || quality.lowercased().contains("excellent") {
+                                return .green
+                            } else if quality.lowercased().contains("fair") || quality.lowercased().contains("normal") {
+                                return .yellow
+                            } else if quality.lowercased().contains("poor") {
+                                return .orange
+                            } else {
+                                return .primary
+                            }
+                        }()
+                        InfoRow(label: "Internal Resistance", value: "\(resistance) (\(quality))", valueColor: color)
                     } else {
-                        InfoRow(label: "Internal Resistance", value: resistance)
+                        InfoRow(label: "Internal Resistance", value: resistance, valueColor: .cyan)
                     }
                 }
 
                 if let qmax = info.gaugeQmax {
-                    InfoRow(label: "Gauge Measured Qmax", value: qmax)
+                    InfoRow(label: "Gauge Measured Qmax", value: qmax, valueColor: .teal)
                 }
 
                 if let vTemp = info.virtualTemperature {
-                    InfoRow(label: "Virtual Temperature", value: vTemp)
+                    let tempColor: Color = {
+                        // Extract temperature value
+                        if let tempString = vTemp.split(separator: "°").first,
+                           let tempValue = Double(tempString) {
+                            if tempValue < 30 { return .blue }
+                            else if tempValue < 40 { return .green }
+                            else if tempValue < 45 { return .orange }
+                            else { return .red }
+                        }
+                        return .primary
+                    }()
+                    InfoRow(label: "Virtual Temperature", value: vTemp, valueColor: tempColor)
                 }
 
                 if let port = info.bestChargerPort {
-                    InfoRow(label: "Best Charger Port", value: port)
+                    InfoRow(label: "Best Charger Port", value: port, valueColor: .purple)
                 }
 
                 if let status = info.gaugeStatus {
-                    InfoRow(label: "Gauge Status", value: status)
+                    let statusColor: Color = {
+                        let lower = status.lowercased()
+                        if lower.contains("ok") || lower.contains("good") || lower.contains("normal") {
+                            return .green
+                        } else if lower.contains("warning") {
+                            return .yellow
+                        } else if lower.contains("error") || lower.contains("fail") {
+                            return .red
+                        }
+                        return .cyan
+                    }()
+                    InfoRow(label: "Gauge Status", value: status, valueColor: statusColor)
                 }
 
                 if let misc = info.miscStatus {
-                    InfoRow(label: "Misc Status", value: misc)
+                    let miscColor: Color = {
+                        let lower = misc.lowercased()
+                        if lower.contains("ok") || lower.contains("good") || lower.contains("normal") {
+                            return .green
+                        } else if lower.contains("warning") {
+                            return .yellow
+                        } else if lower.contains("error") || lower.contains("fail") {
+                            return .red
+                        }
+                        return .cyan
+                    }()
+                    InfoRow(label: "Misc Status", value: misc, valueColor: miscColor)
                 }
 
                 if let failure = info.permanentFailure {
-                    InfoRow(label: "Permanent Failure", value: failure)
+                    let failureColor: Color = {
+                        let lower = failure.lowercased()
+                        if lower.contains("none") || lower.contains("healthy") || lower.contains("no") {
+                            return .green
+                        } else {
+                            return .red
+                        }
+                    }()
+                    InfoRow(label: "Permanent Failure", value: failure, valueColor: failureColor)
                 }
 
                 if let count = info.gaugeWriteCount {
-                    InfoRow(label: "Gauge Write Count", value: "\(count)")
+                    InfoRow(label: "Gauge Write Count", value: "\(count)", valueColor: .cyan)
                 }
 
                 if let soc = info.gaugeSoC {
-                    InfoRow(label: "Gauge SOC", value: soc)
+                    let socColor: Color = {
+                        // Extract percentage if present
+                        if let pctString = soc.split(separator: "%").first?.split(separator: " ").last,
+                           let pctValue = Double(pctString) {
+                            if pctValue >= 80 { return .green }
+                            else if pctValue >= 50 { return .yellow }
+                            else if pctValue >= 20 { return .orange }
+                            else { return .red }
+                        }
+                        return .green
+                    }()
+                    InfoRow(label: "Gauge SOC", value: soc, valueColor: socColor)
                 }
 
                 if let range = info.dailyChargeRange {
-                    InfoRow(label: "Daily Charge Range", value: range)
+                    InfoRow(label: "Daily Charge Range", value: range, valueColor: .teal)
                 }
 
                 if let shipping = info.shippingMode {
-                    InfoRow(label: "Shipping Mode", value: shipping)
+                    InfoRow(label: "Shipping Mode", value: shipping, valueColor: .secondary)
                 }
 
                 if let energy = info.lifetimeEnergy {
-                    InfoRow(label: "Lifetime Energy", value: energy)
+                    InfoRow(label: "Lifetime Energy", value: energy, valueColor: .orange)
                 }
 
                 if let wait = info.postChargeWait {
-                    InfoRow(label: "Post-Charge Wait", value: wait)
+                    InfoRow(label: "Post-Charge Wait", value: wait, valueColor: .indigo)
                 }
 
                 if let wait = info.postDischargeWait {
-                    InfoRow(label: "Post-Discharge Wait", value: wait)
+                    InfoRow(label: "Post-Discharge Wait", value: wait, valueColor: .indigo)
                 }
 
                 if let wake = info.invalidWakeTime {
-                    InfoRow(label: "Invalid Wake Time", value: wake)
+                    let wakeColor: Color = {
+                        if wake.contains("0") && !wake.contains("00:") {
+                            return .green
+                        } else {
+                            return .red
+                        }
+                    }()
+                    InfoRow(label: "Invalid Wake Time", value: wake, valueColor: wakeColor)
                 }
             }
             .padding(.top, 8)
@@ -743,8 +969,8 @@ struct AdvancedDiagnosticsSection: View {
                     .foregroundColor(.red)
                     .font(.system(size: sectionHeaderFontSize))
                 Text("Advanced Diagnostics")
-                    .font(.system(size: sectionHeaderFontSize))
-                    .fontWeight(.semibold)
+                    .font(.sectionHeader)
+                    .tracking(0.3)
             }
         }
     }
@@ -772,8 +998,8 @@ struct USBPortsSection: View {
                     .foregroundColor(.purple)
                     .font(.system(size: sectionHeaderFontSize))
                 Text("USB Ports")
-                    .font(.system(size: sectionHeaderFontSize))
-                    .fontWeight(.semibold)
+                    .font(.sectionHeader)
+                    .tracking(0.3)
             }
         }
     }
@@ -808,57 +1034,156 @@ struct PowerManagementSection: View {
 
                 // Active Assertions
                 if !info.activeAssertions.isEmpty {
-                    Text("Active Assertions")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .padding(.top, 8)
+                    Divider()
+                        .padding(.vertical, 4)
 
-                    ForEach(info.activeAssertions.prefix(5), id: \.self) { assertion in
-                        Text(assertion)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Image(systemName: "exclamationmark.shield.fill")
+                                .foregroundColor(.orange)
+                                .font(.caption)
+                            Text("Active Assertions")
+                                .font(.infoValue)
+                                .tracking(0.2)
+                            Spacer()
+                            Text("\(info.activeAssertions.count)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.orange.opacity(0.15))
+                                .cornerRadius(8)
+                        }
+
+                        ForEach(Array(info.activeAssertions.prefix(5).enumerated()), id: \.offset) { index, assertion in
+                            HStack(alignment: .top, spacing: 8) {
+                                Text("•")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundColor(.orange.opacity(0.6))
+                                    .frame(width: 20, alignment: .leading)
+
+                                Text(assertion)
+                                    .font(.system(size: 12))
+                                    .tracking(0.1)
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(3)
+                            }
+                        }
                     }
                 }
 
                 // Power Source History
                 if !info.powerSourceHistory.isEmpty {
-                    Text("Power Source History")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .padding(.top, 8)
+                    Divider()
+                        .padding(.vertical, 4)
 
-                    ForEach(info.powerSourceHistory.prefix(5), id: \.self) { history in
-                        Text(history)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Image(systemName: "clock.arrow.circlepath")
+                                .foregroundColor(.green)
+                                .font(.caption)
+                            Text("Power Source History")
+                                .font(.infoValue)
+                                .tracking(0.2)
+                        }
+
+                        ForEach(Array(info.powerSourceHistory.prefix(5).enumerated()), id: \.offset) { index, history in
+                            HStack(alignment: .top, spacing: 8) {
+                                Image(systemName: history.contains("AC") ? "bolt.fill" : "battery.100")
+                                    .font(.caption2)
+                                    .foregroundColor(history.contains("AC") ? .green : .blue)
+                                    .frame(width: 20, alignment: .leading)
+
+                                Text(history)
+                                    .font(.system(size: 12, weight: .regular, design: .monospaced))
+                                    .tracking(0.1)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
                     }
                 }
 
                 // Sleep/Wake History
                 if !info.sleepWakeHistory.isEmpty {
-                    Text("Sleep/Wake History")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .padding(.top, 8)
+                    Divider()
+                        .padding(.vertical, 4)
 
-                    ForEach(info.sleepWakeHistory.prefix(5), id: \.self) { history in
-                        Text(history)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Image(systemName: "moon.stars.fill")
+                                .foregroundColor(.indigo)
+                                .font(.caption)
+                            Text("Sleep/Wake History")
+                                .font(.infoValue)
+                                .tracking(0.2)
+                        }
+
+                        ForEach(Array(info.sleepWakeHistory.prefix(5).enumerated()), id: \.offset) { index, history in
+                            let iconAndColor = getSleepWakeIcon(history: history)
+
+                            HStack(alignment: .top, spacing: 8) {
+                                Image(systemName: iconAndColor.icon)
+                                    .font(.caption2)
+                                    .foregroundColor(iconAndColor.color)
+                                    .frame(width: 20, alignment: .leading)
+
+                                Text(history)
+                                    .font(.system(size: 12, weight: .regular, design: .monospaced))
+                                    .tracking(0.1)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
                     }
                 }
 
                 // Scheduled Events
                 if !info.scheduledEvents.isEmpty {
-                    Text("Scheduled Events")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .padding(.top, 8)
+                    Divider()
+                        .padding(.vertical, 4)
 
-                    ForEach(info.scheduledEvents.prefix(5), id: \.self) { event in
-                        Text(event)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Image(systemName: "calendar.badge.clock")
+                                .foregroundColor(.blue)
+                                .font(.caption)
+                            Text("Scheduled Events")
+                                .font(.infoValue)
+                                .tracking(0.2)
+                        }
+
+                        ForEach(Array(info.scheduledEvents.prefix(5).enumerated()), id: \.offset) { index, event in
+                            if let parsed = parseScheduledEvent(event) {
+                                HStack(alignment: .top, spacing: 8) {
+                                    Text("[\(index)]")
+                                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                                        .foregroundColor(.blue)
+                                        .frame(width: 30, alignment: .leading)
+
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        HStack {
+                                            Image(systemName: parsed.type == "wake" ? "sun.max.fill" : "moon.fill")
+                                                .font(.caption2)
+                                                .foregroundColor(parsed.type == "wake" ? .orange : .indigo)
+                                            Text(parsed.type.capitalized)
+                                                .font(.infoLabel)
+                                                .foregroundColor(.primary)
+                                        }
+
+                                        Text(parsed.datetime)
+                                            .font(.system(size: 12, weight: .medium, design: .monospaced))
+                                            .foregroundColor(.secondary)
+
+                                        if !parsed.reason.isEmpty {
+                                            Text(parsed.reason)
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                                .lineLimit(2)
+                                        }
+                                    }
+                                }
+                                .padding(.vertical, 4)
+                            }
+                        }
                     }
                 }
             }
@@ -869,8 +1194,8 @@ struct PowerManagementSection: View {
                     .foregroundColor(.orange)
                     .font(.system(size: sectionHeaderFontSize))
                 Text("Power Management")
-                    .font(.system(size: sectionHeaderFontSize))
-                    .fontWeight(.semibold)
+                    .font(.sectionHeader)
+                    .tracking(0.3)
             }
         }
     }
@@ -997,8 +1322,8 @@ struct PowerBreakdownSection: View {
                     .foregroundColor(.orange)
                     .font(.system(size: sectionHeaderFontSize))
                 Text("Power Breakdown")
-                    .font(.system(size: sectionHeaderFontSize))
-                    .fontWeight(.semibold)
+                    .font(.sectionHeader)
+                    .tracking(0.3)
             }
         }
     }
@@ -1031,8 +1356,8 @@ struct ElectricalInformationSection: View {
                     .foregroundColor(.yellow)
                     .font(.system(size: sectionHeaderFontSize))
                 Text("Electrical Information")
-                    .font(.system(size: sectionHeaderFontSize))
-                    .fontWeight(.semibold)
+                    .font(.sectionHeader)
+                    .tracking(0.3)
             }
         }
     }
@@ -1065,8 +1390,8 @@ struct LifetimeStatisticsSection: View {
                     .foregroundColor(.purple)
                     .font(.system(size: sectionHeaderFontSize))
                 Text("Lifetime Statistics")
-                    .font(.system(size: sectionHeaderFontSize))
-                    .fontWeight(.semibold)
+                    .font(.sectionHeader)
+                    .tracking(0.3)
             }
         }
     }
@@ -1096,8 +1421,8 @@ struct HealthAssessmentSection: View {
                     .foregroundColor(.pink)
                     .font(.system(size: sectionHeaderFontSize))
                 Text("Health Assessment")
-                    .font(.system(size: sectionHeaderFontSize))
-                    .fontWeight(.semibold)
+                    .font(.sectionHeader)
+                    .tracking(0.3)
             }
         }
     }
@@ -1105,26 +1430,99 @@ struct HealthAssessmentSection: View {
 
 // MARK: - Quick Actions Section
 struct QuickActionsSection: View {
+    @Environment(\.colorScheme) var colorScheme
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Image(systemName: "sparkles")
-                    .foregroundColor(.blue)
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [.blue, .purple],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .font(.system(size: sectionHeaderFontSize))
                 Text("Quick Actions")
-                    .font(.headline)
+                    .font(.sectionHeader)
+                    .tracking(0.3)
             }
 
-            Button("Open System Settings → Battery") {
-                let url = URL(string: "x-apple.systempreferences:com.apple.preference.battery")!
-                NSWorkspace.shared.open(url)
-            }
-            .buttonStyle(.link)
+            VStack(spacing: 8) {
+                Button(action: {
+                    let url = URL(string: "x-apple.systempreferences:com.apple.preference.battery")!
+                    NSWorkspace.shared.open(url)
+                }) {
+                    HStack {
+                        Image(systemName: "gear")
+                            .foregroundColor(.blue)
+                        Text("Open System Settings → Battery")
+                            .font(.buttonText)
+                            .tracking(0.2)
+                            .foregroundColor(.primary)
+                        Spacer()
+                        Image(systemName: "arrow.up.forward")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(colorScheme == .dark
+                                ? Color.white.opacity(0.05)
+                                : Color.white.opacity(0.6))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(Color.blue.opacity(0.2), lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
 
-            Button("Quit Battery Monitor") {
-                NSApplication.shared.terminate(nil)
+                Button(action: {
+                    NSApplication.shared.terminate(nil)
+                }) {
+                    HStack {
+                        Image(systemName: "xmark.circle")
+                            .foregroundColor(.red)
+                        Text("Quit Battery Monitor")
+                            .font(.buttonText)
+                            .tracking(0.2)
+                            .foregroundColor(.primary)
+                        Spacer()
+                    }
+                    .padding(12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(colorScheme == .dark
+                                ? Color.white.opacity(0.05)
+                                : Color.white.opacity(0.6))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(Color.red.opacity(0.2), lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.link)
         }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(colorScheme == .dark
+                    ? Color.white.opacity(0.03)
+                    : Color.white.opacity(0.5))
+                .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.3 : 0.1),
+                       radius: 8, x: 0, y: 2)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(colorScheme == .dark
+                    ? Color.white.opacity(0.1)
+                    : Color.black.opacity(0.05),
+                    lineWidth: 1)
+        )
     }
 }
 
@@ -1135,17 +1533,90 @@ struct InfoRow: View {
     var valueColor: Color = .primary
 
     var body: some View {
-        HStack(alignment: .top) {
+        HStack(alignment: .top, spacing: 12) {
             Text(label)
+                .font(.infoLabel)
                 .foregroundColor(.secondary)
+                .tracking(0.2)
+                .lineSpacing(4)
             Spacer()
             Text(value)
-                .fontWeight(.medium)
+                .font(.infoValue)
+                .tracking(0.3)
+                .lineSpacing(4)
                 .foregroundColor(valueColor)
                 .multilineTextAlignment(.trailing)
         }
-        .font(.subheadline)
+        .padding(.vertical, 2)
     }
+}
+
+// MARK: - Helper Functions
+struct ScheduledEventInfo {
+    let type: String  // "wake" or "sleep"
+    let datetime: String
+    let reason: String
+}
+
+struct IconAndColor {
+    let icon: String
+    let color: Color
+}
+
+func getSleepWakeIcon(history: String) -> IconAndColor {
+    if history.contains("Wake") && !history.contains("DarkWake") {
+        return IconAndColor(icon: "sun.max.fill", color: .orange)
+    } else if history.contains("DarkWake") {
+        return IconAndColor(icon: "moon.circle.fill", color: .purple)
+    } else {
+        return IconAndColor(icon: "moon.fill", color: .indigo)
+    }
+}
+
+func parseScheduledEvent(_ event: String) -> ScheduledEventInfo? {
+    // Format: "[0]  wake at 10/23/2025 12:14:24 by 'com.apple.alarm.user-invisible...'"
+    // or: "[0]  sleep at 10/23/2025 12:14:24 by 'com.apple.alarm...'"
+
+    let trimmed = event.trimmingCharacters(in: .whitespaces)
+
+    // Extract type (wake/sleep)
+    let type: String
+    if trimmed.contains(" wake ") {
+        type = "wake"
+    } else if trimmed.contains(" sleep ") {
+        type = "sleep"
+    } else {
+        return nil
+    }
+
+    // Extract datetime using regex
+    // Pattern: "at MM/DD/YYYY HH:MM:SS"
+    let datePattern = "at (\\d{1,2}/\\d{1,2}/\\d{4} \\d{1,2}:\\d{2}:\\d{2})"
+    if let regex = try? NSRegularExpression(pattern: datePattern),
+       let match = regex.firstMatch(in: trimmed, range: NSRange(trimmed.startIndex..., in: trimmed)),
+       let dateRange = Range(match.range(at: 1), in: trimmed) {
+        let datetime = String(trimmed[dateRange])
+
+        // Extract reason (after "by '")
+        var reason = ""
+        if let byIndex = trimmed.range(of: " by '") {
+            let afterBy = trimmed[byIndex.upperBound...]
+            if let endQuote = afterBy.firstIndex(of: "'") {
+                reason = String(afterBy[..<endQuote])
+                // Simplify long bundle IDs
+                if reason.hasPrefix("com.apple.") {
+                    let components = reason.components(separatedBy: ".")
+                    if components.count > 2 {
+                        reason = components.suffix(min(3, components.count)).joined(separator: ".")
+                    }
+                }
+            }
+        }
+
+        return ScheduledEventInfo(type: type, datetime: datetime, reason: reason)
+    }
+
+    return nil
 }
 
 // MARK: - Preview
