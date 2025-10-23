@@ -234,10 +234,18 @@ struct BatteryMonitorCLI {
                 printRow("Gauge Measured Qmax:", String(format: "%d mAh (FCC: %d mAh, %.1f%% diff)", qmax, fcc, diffPct))
             }
 
+            // Virtual Temperature - only show when battery is active and value is reliable
             if let virtualTemp = battery.virtualTemperature {
                 let tempDiff = virtualTemp - battery.temperature
-                printRow("Virtual Temperature:", String(format: "%.1f°C (calc: %+.1f°C from sensor)", virtualTemp, tempDiff))
-                printDescription("Calculated temp based on load & discharge")
+
+                // Check if battery is active (charging or discharging with >100mA current)
+                let batteryActive = battery.isCharging || abs(battery.amperage) > 100
+
+                // Only show if: battery is active AND temp is realistic AND difference is reasonable
+                if batteryActive && virtualTemp >= -20 && virtualTemp <= 80 && abs(tempDiff) > 2 && abs(tempDiff) < 10 {
+                    printRow("Virtual Temperature:", String(format: "%.1f°C (calc: %+.1f°C from sensor)", virtualTemp, tempDiff))
+                    printDescription("Calculated temp based on load & discharge")
+                }
             }
 
             if let bestPort = battery.bestChargerPort {
