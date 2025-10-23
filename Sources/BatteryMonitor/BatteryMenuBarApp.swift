@@ -17,6 +17,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var popover: NSPopover?
     var timer: Timer?
     var contextMenu: NSMenu?
+    var preferencesWindow: NSWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Pre-cache battery data at startup for instant popover display
@@ -42,11 +43,30 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         popover.contentViewController = NSHostingController(rootView: BatteryDetailView())
         self.popover = popover
 
-        // Start auto-refresh timer (every 30 seconds)
-        timer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
+        // Start auto-refresh timer using preference interval
+        startRefreshTimer()
+
+        // Observe preference changes to update timer
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(preferencesDidChange),
+            name: UserDefaults.didChangeNotification,
+            object: nil
+        )
+    }
+
+    func startRefreshTimer() {
+        timer?.invalidate()
+        let interval = PreferencesManager.shared.autoRefreshInterval
+        timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             self?.updateStatusButton()
             self?.refreshPopover()
         }
+    }
+
+    @objc func preferencesDidChange() {
+        // Restart timer with new interval
+        startRefreshTimer()
     }
 
     func createMenu() -> NSMenu {
@@ -56,6 +76,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let refreshItem = NSMenuItem(title: "Refresh", action: #selector(menuRefresh), keyEquivalent: "r")
         refreshItem.target = self
         menu.addItem(refreshItem)
+
+        menu.addItem(NSMenuItem.separator())
+
+        // Preferences item
+        let preferencesItem = NSMenuItem(title: "Preferences...", action: #selector(menuPreferences), keyEquivalent: ",")
+        preferencesItem.target = self
+        menu.addItem(preferencesItem)
 
         menu.addItem(NSMenuItem.separator())
 
@@ -70,6 +97,29 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func menuRefresh() {
         updateStatusButton()
         BatteryDataManager.shared.refresh()
+    }
+
+    @objc func menuPreferences() {
+        if let window = preferencesWindow {
+            window.makeKeyAndOrderFront(nil)
+            window.level = .floating
+            NSApp.activate(ignoringOtherApps: true)
+        } else {
+            let preferencesView = PreferencesView()
+            let hostingController = NSHostingController(rootView: preferencesView)
+
+            let window = NSWindow(contentViewController: hostingController)
+            window.title = "Preferences"
+            window.styleMask = [.titled, .closable]
+            window.level = .floating
+            window.center()
+            window.setFrameAutosaveName("PreferencesWindow")
+            window.isReleasedWhenClosed = false
+
+            preferencesWindow = window
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        }
     }
 
     @objc func menuQuit() {

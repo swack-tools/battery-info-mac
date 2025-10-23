@@ -215,7 +215,7 @@ struct BatteryDetailView: View {
             .padding(20)
             .disclosureGroupStyle(FullWidthDisclosureStyle())
         }
-        .frame(width: 540, height: 720)
+        .frame(width: 400, height: 600)
         .background(
             ZStack {
                 (colorScheme == .dark
