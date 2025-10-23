@@ -1,10 +1,18 @@
 # BatteryMonitor for macOS
 
-A comprehensive macOS battery monitoring tool available as both a **menu bar app** and **command-line tool**, providing detailed battery health, charging status, and USB-C Power Delivery information for Apple Silicon and Intel Macs.
+A comprehensive macOS battery monitoring tool available as both a
+**menu bar app** and **command-line tool**, providing detailed
+battery health, charging status, and USB-C Power Delivery information
+for Apple Silicon and Intel Macs.
 
-[![Platform](https://img.shields.io/badge/platform-macOS%2011%2B-lightgrey.svg)]()
-[![Swift](https://img.shields.io/badge/swift-5.5%2B-orange.svg)]()
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)]()
+[![Platform][badge-platform]]()
+[![Swift][badge-swift]]()
+[![License][badge-license]]()
+
+[badge-platform]:
+  https://img.shields.io/badge/platform-macOS%2011%2B-lightgrey.svg
+[badge-swift]: https://img.shields.io/badge/swift-5.5%2B-orange.svg
+[badge-license]: https://img.shields.io/badge/license-MIT-blue.svg
 
 ---
 
@@ -28,40 +36,64 @@ A comprehensive macOS battery monitoring tool available as both a **menu bar app
 ## Features
 
 ### 🔋 Battery Health & Diagnostics (50+ metrics)
-- **Battery Health**: FCC, design capacity, nominal capacity, health percentage
-- **Cycle Count**: Current cycles, design lifespan, estimated cycles to 80%
-- **Cell Diagnostics**: Individual cell voltages, voltage delta, disconnect counts
-- **Internal Metrics**: Resistance, gauge SOC, Qmax measurements, virtual temperature
-- **Chemistry Info**: Manufacturer, model, serial number, manufacture date decoder
+
+- **Battery Health**: FCC, design capacity, nominal capacity,
+  health percentage
+- **Cycle Count**: Current cycles, design lifespan,
+  estimated cycles to 80%
+- **Cell Diagnostics**: Individual cell voltages, voltage delta,
+  disconnect counts
+- **Internal Metrics**: Resistance, gauge SOC, Qmax measurements,
+  virtual temperature
+- **Chemistry Info**: Manufacturer, model, serial number,
+  manufacture date decoder
 - **Temperature**: Current, average, min/max lifetime temperatures
-- **Health Score**: Composite 0-100 score (A+ to D) based on capacity, cycles, cell balance, resistance
+- **Health Score**: Composite 0-100 score (A+ to D) based on
+  capacity, cycles, cell balance, resistance
 
 ### ⚡ Charger Information (20+ metrics)
+
 - **Adapter Details**: Wattage, type, family code, serial number
-- **USB-C PD Contract**: Negotiated voltage/current/power (e.g., 20V @ 2.24A = 45W)
-- **Charging Status**: Type (USB-C/Wireless), active profile, efficiency
-- **Real-time Power**: Adapter input, battery power flow, system load
-- **Configuration**: Charger config registers, PMU settings, charge inhibit reasons
+- **USB-C PD Contract**: Negotiated voltage/current/power
+  (e.g., 20V @ 2.24A = 45W)
+- **Charging Status**: Type (USB-C/Wireless), active profile,
+  efficiency
+- **Real-time Power**: Adapter input, battery power flow,
+  system load
+- **Configuration**: Charger config registers, PMU settings,
+  charge inhibit reasons
 
 ### 🔌 USB-C Power Delivery (15+ metrics)
-- **PD Specification**: Version (1.0, 2.0, 3.0, 3.1) from FedDetails
-- **Source Capabilities**: All PDOs from charger (voltage/current/power)
-- **Sink Capabilities**: All PDOs from laptop (including PPS support)
+
+- **PD Specification**: Version (1.0, 2.0, 3.0, 3.1)
+  from FedDetails
+- **Source Capabilities**: All PDOs from charger
+  (voltage/current/power)
+- **Sink Capabilities**: All PDOs from laptop
+  (including PPS support)
 - **Active Contract**: RDO, selected PDO, operating current
-- **Port Details**: Firmware version, port mode (DRP/DFP/UFP), power state
+- **Port Details**: Firmware version, port mode (DRP/DFP/UFP),
+  power state
 
 ### 💻 Power Breakdown (requires sudo)
+
 - **Component Power**: CPU, GPU, ANE (Neural Engine), DRAM
-- **System Metrics**: Total power, thermal pressure, peak component
-- **Power Distribution**: Display, other components, total system load
+- **System Metrics**: Total power, thermal pressure,
+  peak component
+- **Power Distribution**: Display, other components,
+  total system load
 - **Real-time Flow**: Adapter in, battery, system consumption
 
 ### 🖥️ System Information
+
 - **Hardware**: Mac model, chip (M1/M2/M3/M4), RAM, CPU cores
 - **Display**: Brightness, estimated power consumption
-- **Power Management**: Low power mode, hibernation, Wake on LAN, Power Nap
-- **Active Assertions**: What's preventing sleep (simplified names)
-- **History**: Power source changes, sleep/wake events, scheduled events
+- **Power Management**: Low power mode, hibernation,
+  Wake on LAN, Power Nap
+- **Active Assertions**: What's preventing sleep
+  (simplified names)
+- **History**: Power source changes, sleep/wake events,
+  scheduled events
 
 ---
 
@@ -143,7 +175,9 @@ Cell Voltage Delta:    2mV
 Advanced Battery Diagnostics
 ==================================================
 Internal Resistance:   76.7 mΩ (Excellent)
-Gauge Status:          Terminate Charge Alarm, Impedance Measured, Fully Charged (fast charge complete, trickle charging)
+Gauge Status:          Terminate Charge Alarm, Impedance Measured,
+                       Fully Charged (fast charge complete,
+                       trickle charging)
 Misc Status:           0x008C (bits: 2, 3, 7)
                        ⚠️  Bit meanings undocumented by Apple
 Battery Mfg:           ATL
@@ -191,7 +225,8 @@ Cycle Count:           Excellent (very low) (69 cycles)
 - **macOS**: 11.0 (Big Sur) or later
 - **Hardware**: Apple Silicon (M1/M2/M3/M4) or Intel Macs
 - **Swift**: 5.5 or later (included with Xcode Command Line Tools)
-- **Sudo** (optional): Required for detailed power metrics (CPU/GPU/ANE/DRAM power)
+- **Sudo** (optional): Required for detailed power metrics
+  (CPU/GPU/ANE/DRAM power)
 
 ---
 
@@ -199,7 +234,9 @@ Cycle Count:           Excellent (very low) (69 cycles)
 
 ### Download Pre-Built Release (Recommended)
 
-Download the latest DMG installer from [GitHub Releases](https://github.com/swackhamer/mac-battery-info-swift/releases):
+Download the latest DMG installer from [GitHub Releases][releases]:
+
+[releases]: https://github.com/swackhamer/mac-battery-info-swift/releases
 
 1. Download `BatteryMonitor.dmg`
 2. Open the DMG file
@@ -208,7 +245,8 @@ Download the latest DMG installer from [GitHub Releases](https://github.com/swac
    - macOS will block the app because it's not notarized
    - This is normal - see [INSTALL.md](INSTALL.md) for details
 
-For detailed installation instructions and troubleshooting, see [INSTALL.md](INSTALL.md).
+For detailed installation instructions and troubleshooting,
+see [INSTALL.md](INSTALL.md).
 
 For creating your own releases, see [RELEASE.md](RELEASE.md).
 
@@ -285,7 +323,9 @@ sudo .build/release/BatteryMonitorCLI
 ### What Works Without Sudo
 
 All features work without sudo except:
-- Detailed power breakdown (CPU/GPU/ANE/DRAM power from `powermetrics`)
+
+- Detailed power breakdown
+  (CPU/GPU/ANE/DRAM power from `powermetrics`)
 - Thermal pressure monitoring
 
 ### What Requires Sudo (CLI only)
@@ -303,15 +343,20 @@ All features work without sudo except:
 The tool gathers data from multiple macOS frameworks and utilities:
 
 1. **IOKit/IORegistry**
-   - `AppleSmartBattery`: Battery metrics, charging status, cell diagnostics
+   - `AppleSmartBattery`: Battery metrics, charging status,
+     cell diagnostics
    - `AppleTypeCPortController`: USB-C PD information, port state
    - `IODisplayConnect`: Display brightness and power
 
 2. **System Tools**
-   - `system_profiler SPPowerDataType`: Charger details, battery firmware
-   - `system_profiler SPHardwareDataType`: Mac model, chip, RAM, cores
-   - `pmset`: Power management settings, assertions, scheduled events
-   - `powermetrics` (sudo): Component power consumption, thermal pressure
+   - `system_profiler SPPowerDataType`: Charger details,
+     battery firmware
+   - `system_profiler SPHardwareDataType`: Mac model, chip,
+     RAM, cores
+   - `pmset`: Power management settings, assertions,
+     scheduled events
+   - `powermetrics` (sudo): Component power consumption,
+     thermal pressure
 
 ### Project Structure
 
@@ -336,17 +381,22 @@ Sources/
 ### Key Technical Details
 
 - **100% Native Swift**: No dependencies, pure Swift 5.5+
-- **Comprehensive**: 148+ battery/power metrics (100% parity with Python version)
-- **Human-Readable**: 17+ decoders for hex values (charger family, gauge status, etc.)
+- **Comprehensive**: 148+ battery/power metrics
+  (100% parity with Python version)
+- **Human-Readable**: 17+ decoders for hex values
+  (charger family, gauge status, etc.)
 - **Type-Safe**: Full type annotations with compile-time safety
-- **Performance**: ~25% faster than Python equivalent (~150ms vs ~200ms)
-- **Memory Efficient**: Direct IOKit access, no interpreter overhead
+- **Performance**: ~25% faster than Python equivalent
+  (~150ms vs ~200ms)
+- **Memory Efficient**: Direct IOKit access,
+  no interpreter overhead
 
 ---
 
 ## Comparison to Python Version
 
-This Swift implementation achieves **100% feature parity** with the Python `power_info.py`:
+This Swift implementation achieves **100% feature parity** with the
+Python `power_info.py`:
 
 | Metric | Python | Swift |
 |--------|--------|-------|
@@ -380,7 +430,8 @@ This Swift implementation achieves **100% feature parity** with the Python `powe
 .build/release/BatteryMonitorCLI | grep -A5 "Battery Health" >> battery_log.txt
 
 # Run via cron (daily at 9am)
-0 9 * * * /usr/local/bin/battery-monitor | grep "Health Percentage" >> ~/battery_history.log
+0 9 * * * /usr/local/bin/battery-monitor | \
+  grep "Health Percentage" >> ~/battery_history.log
 ```
 
 ### Check Charger Compatibility (CLI)
@@ -400,14 +451,16 @@ This Swift implementation achieves **100% feature parity** with the Python `powe
 sudo .build/release/BatteryMonitorCLI | grep -A10 "Power Breakdown"
 
 # Watch mode (update every 2 seconds)
-watch -n 2 "sudo .build/release/BatteryMonitorCLI | grep -A10 'Power Breakdown'"
+watch -n 2 "sudo .build/release/BatteryMonitorCLI | \
+  grep -A10 'Power Breakdown'"
 ```
 
 ### Always-On Monitoring (Menu Bar App)
 
 ```bash
 # Run menu bar app at login
-# Add to Login Items in System Settings > General > Login Items
+# Add to Login Items in
+# System Settings > General > Login Items
 # Or run manually:
 open .build/release/BatteryMonitor
 ```
@@ -419,7 +472,9 @@ open .build/release/BatteryMonitor
 ### IORegistry Keys Accessed
 
 **Battery Metrics:**
-- `AppleRawCurrentCapacity`, `AppleRawMaxCapacity`, `NominalChargeCapacity`
+
+- `AppleRawCurrentCapacity`, `AppleRawMaxCapacity`,
+  `NominalChargeCapacity`
 - `CycleCount`, `DesignCapacity`, `DesignCycleCount9C`
 - `Temperature`, `Voltage`, `Amperage`, `InstantAmperage`
 - `CellVoltage` (array), `WeightedRa` (internal resistance)
@@ -427,11 +482,13 @@ open .build/release/BatteryMonitor
 - `ManufactureDate`, `BatterySerialNumber`, `DeviceName`
 
 **Charger Information:**
+
 - `AdapterDetails` (UsbHvcMenu, profileVoltage, profileCurrent)
 - `ChargerConfiguration`, `ExternalChargeCapable`, `IsCharging`
 - `ChargingVoltage`, `ChargingCurrent`, `NotChargingReason`
 
 **USB-C Power Delivery:**
+
 - `PortControllerInfo`, `PortControllerActiveContractRdo`
 - `PortControllerPortPDO`, `PortControllerMaxPower`
 - `FedDetails`, `FedPdSpecRevision` (PD version)
@@ -439,11 +496,14 @@ open .build/release/BatteryMonitor
 
 ### Decoders Implemented
 
-1. **Charger Family** - Identifies Apple adapters (140W, 96W, 87W, etc.)
+1. **Charger Family** - Identifies Apple adapters
+   (140W, 96W, 87W, etc.)
 2. **Gauge Status** - 16-bit fuel gauge chip flags
-3. **Misc Status** - Shows active bits (meanings undocumented by Apple)
+3. **Misc Status** - Shows active bits
+   (meanings undocumented by Apple)
 4. **Permanent Failure** - Battery failure indicators
-5. **Charger Config** - Shows active bits (meanings undocumented by Apple)
+5. **Charger Config** - Shows active bits
+   (meanings undocumented by Apple)
 6. **Not Charging Reason** - Why charging is inhibited
 7. **Chemistry ID** - Li-ion battery chemistry types
 8. **Port Mode** - DRP/DFP/UFP role decoder
@@ -459,10 +519,12 @@ open .build/release/BatteryMonitor
 ## Known Limitations
 
 1. **macOS Only**: Requires macOS-specific IOKit APIs
-2. **No Time-Series**: Shows current state only (no historical tracking)
+2. **No Time-Series**: Shows current state only
+   (no historical tracking)
 3. **Sudo for Full Metrics**: `powermetrics` requires root access
 4. **DRAM Power**: May report 0.0W on some systems
-5. **Real-time Variance**: Temperature/power readings vary by measurement timing
+5. **Real-time Variance**: Temperature/power readings vary by
+   measurement timing
 
 ---
 
@@ -581,8 +643,10 @@ MIT License - See LICENSE file for details.
 ## Related Projects
 
 - [power_info.py](../power_info.py) - Original Python implementation
-- [coconutBattery](https://www.coconut-flavour.com/coconutbattery/) - GUI battery monitor (commercial)
-- [smcFanControl](https://github.com/hholtmann/smcFanControl) - Fan control utility
+- [coconutBattery](https://www.coconut-flavour.com/coconutbattery/) -
+  GUI battery monitor (commercial)
+- [smcFanControl](https://github.com/hholtmann/smcFanControl) -
+  Fan control utility
 - [Stats](https://github.com/exelban/stats) - macOS system monitor
 
 ---
@@ -599,15 +663,20 @@ MIT License - See LICENSE file for details.
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/yourusername/BatteryMonitor/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/BatteryMonitor/discussions)
+- **Issues**: [GitHub Issues][gh-issues]
+- **Discussions**: [GitHub Discussions][gh-discussions]
+
+[gh-issues]: https://github.com/yourusername/BatteryMonitor/issues
+[gh-discussions]: https://github.com/yourusername/BatteryMonitor/discussions
 - **Documentation**: See [CLAUDE.md](CLAUDE.md) for project guide
 
 ---
 
 **⭐ Star this repo if you find it useful!**
 
-**Note**: This tool is for informational and diagnostic purposes only. It does not modify any system settings or battery parameters. For best results, use genuine Apple chargers.
+**Note**: This tool is for informational and diagnostic purposes only.
+It does not modify any system settings or battery parameters.
+For best results, use genuine Apple chargers.
 
 ---
 

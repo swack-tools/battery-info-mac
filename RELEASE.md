@@ -12,7 +12,8 @@ This document describes how to create a new release of Battery Monitor.
 
 ### Automatic Release (Recommended)
 
-The GitHub Actions workflow automatically builds and releases when you push a version tag:
+The GitHub Actions workflow automatically builds and releases when you
+push a version tag:
 
 ```bash
 # 1. Make sure you're on main and up to date
@@ -25,6 +26,7 @@ git push origin v1.0.0
 ```
 
 The workflow will automatically:
+
 1. Build the release binary (BatteryMonitor and BatteryMonitorCLI)
 2. Create the .app bundle with proper Info.plist
 3. Generate the DMG installer
@@ -65,7 +67,8 @@ This creates a development release without a version tag.
 
 Follow [Semantic Versioning](https://semver.org/):
 
-- **MAJOR** (1.0.0 → 2.0.0): Breaking changes, major UI overhaul
+- **MAJOR** (1.0.0 → 2.0.0): Breaking changes, major UI
+  overhaul
 - **MINOR** (1.0.0 → 1.1.0): New features, backwards compatible
 - **PATCH** (1.0.0 → 1.0.1): Bug fixes, minor improvements
 
@@ -92,14 +95,14 @@ swift build -c release --product BatteryMonitor
 
 # Create .app bundle
 mkdir -p BatteryMonitor.app/Contents/MacOS
-cp .build/arm64-apple-macosx/release/BatteryMonitor \
+cp .build/arm64-apple-macosx/release/BatteryMonitor \\
    BatteryMonitor.app/Contents/MacOS/BatteryMonitor
 
 # Create DMG
 mkdir -p dmg_staging
 cp -R BatteryMonitor.app dmg_staging/
-hdiutil create -volname "Battery Monitor" -srcfolder dmg_staging \
-  -ov -format UDZO BatteryMonitor.dmg
+hdiutil create -volname "Battery Monitor" \\
+  -srcfolder dmg_staging -ov -format UDZO BatteryMonitor.dmg
 
 # Test the DMG
 open BatteryMonitor.dmg
