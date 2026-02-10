@@ -99,6 +99,13 @@ for Apple Silicon and Intel Macs.
 
 ## Quick Start
 
+### Homebrew
+
+```bash
+brew tap swack-tools/tap
+brew install --cask battery-monitor
+```
+
 ### Menu Bar App
 
 ```bash
