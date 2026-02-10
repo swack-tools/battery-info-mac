@@ -110,7 +110,7 @@ brew install --cask battery-monitor
 
 ```bash
 # Clone and build
-git clone https://github.com/swackhamer/mac-battery-info-swift.git
+git clone https://github.com/swack-tools/battery-info-mac.git
 cd mac-battery-info-swift
 swift build -c release --product BatteryMonitor
 
@@ -268,7 +268,7 @@ For creating your own releases, see [RELEASE.md](RELEASE.md).
 xcode-select --install
 
 # Clone the repository
-git clone https://github.com/swackhamer/mac-battery-info-swift.git
+git clone https://github.com/swack-tools/battery-info-mac.git
 cd mac-battery-info-swift
 
 # Build both versions
@@ -677,8 +677,8 @@ MIT License - See LICENSE file for details.
 - **Issues**: [GitHub Issues][gh-issues]
 - **Discussions**: [GitHub Discussions][gh-discussions]
 
-[gh-issues]: https://github.com/yourusername/BatteryMonitor/issues
-[gh-discussions]: https://github.com/yourusername/BatteryMonitor/discussions
+[gh-issues]: https://github.com/swack-tools/battery-info-mac/issues
+[gh-discussions]: https://github.com/swack-tools/battery-info-mac/discussions
 - **Documentation**: See [CLAUDE.md](CLAUDE.md) for project guide
 
 ---
