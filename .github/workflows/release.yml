@@ -216,8 +216,6 @@ jobs:
           - \`BatteryMonitorCLI.tar.gz\` - Command-line tool
           - \`BatteryMonitorCLI.tar.gz.sha256\` - CLI checksum
 
-          For detailed installation instructions, see [INSTALL.md](https://github.com/${{ github.repository }}/blob/${{ steps.get_version.outputs.tag }}/INSTALL.md)
-
           ---
           🤖 Built with Swift and SwiftUI" \
             BatteryMonitor.dmg \

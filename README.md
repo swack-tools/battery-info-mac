@@ -256,9 +256,6 @@ Download the latest DMG installer from [GitHub Releases][releases]:
 2. Open the DMG file
 3. Drag `Battery Monitor.app` to your Applications folder
 
-For detailed installation instructions and troubleshooting,
-see [INSTALL.md](INSTALL.md).
-
 For creating your own releases, see [RELEASE.md](RELEASE.md).
 
 ### Build from Source
