@@ -139,7 +139,6 @@ Before creating a release:
 
 - [ ] All features tested on macOS
 - [ ] README.md updated with new features
-- [ ] INSTALL.md updated if installation changed
 - [ ] Version number chosen following semver
 - [ ] CHANGELOG.md updated (if you maintain one)
 - [ ] All commits pushed to main branch
