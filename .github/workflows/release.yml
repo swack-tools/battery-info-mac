@@ -22,6 +22,31 @@ jobs:
         with:
           xcode-version: latest-stable
 
+      - name: Import Developer ID certificate
+        run: |
+          # Create a temporary keychain for CI code signing
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+
+          # Decode the base64-encoded .p12 certificate from secrets
+          echo "${{ secrets.APPLE_CERTIFICATE_BASE64 }}" | base64 --decode > certificate.p12
+
+          # Import the certificate into the temporary keychain
+          security import certificate.p12 \
+            -k build.keychain \
+            -P "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}" \
+            -T /usr/bin/codesign
+
+          # Add the temporary keychain to the search list so codesign can find it
+          security list-keychains -d user -s build.keychain $(security list-keychains -d user | tr -d '"')
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+
+          # Allow codesign to access the keychain without UI prompts
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" build.keychain
+
+          # Clean up the exported certificate file
+          rm -f certificate.p12
+
       - name: Build release binary
         run: |
           swift build -c release --product BatteryMonitor
@@ -59,7 +84,7 @@ jobs:
           	<key>CFBundleExecutable</key>
           	<string>BatteryMonitor</string>
           	<key>CFBundleIdentifier</key>
-          	<string>com.batterymonitor.app</string>
+          	<string>com.swacktools.batterymonitor</string>
           	<key>CFBundleInfoDictionaryVersion</key>
           	<string>6.0</string>
           	<key>CFBundleName</key>
@@ -87,11 +112,17 @@ jobs:
 
       - name: Code sign app bundle
         run: |
-          # Ad-hoc code signing (for development/testing)
-          # For production, you would use a Developer ID certificate
-          codesign --force --deep --sign - BatteryMonitor.app
+          # Sign the main binary inside the bundle first (inside-out signing)
+          codesign --force --options runtime --timestamp \
+            --sign "Developer ID Application: ${{ secrets.APPLE_TEAM_NAME }} (${{ secrets.APPLE_TEAM_ID }})" \
+            BatteryMonitor.app/Contents/MacOS/BatteryMonitor
 
-          # Verify signature
+          # Sign the outer app bundle
+          codesign --force --options runtime --timestamp \
+            --sign "Developer ID Application: ${{ secrets.APPLE_TEAM_NAME }} (${{ secrets.APPLE_TEAM_ID }})" \
+            BatteryMonitor.app
+
+          # Verify the Developer ID signature
           codesign -dvv BatteryMonitor.app
 
       - name: Create DMG installer
@@ -117,10 +148,31 @@ jobs:
           ls -lh BatteryMonitor.dmg
           echo "✓ DMG installer created with Applications symlink for drag-and-drop installation"
 
+      - name: Notarize DMG
+        run: |
+          # Submit the DMG to Apple's notary service and wait for completion
+          xcrun notarytool submit BatteryMonitor.dmg \
+            --apple-id "${{ secrets.APPLE_ID }}" \
+            --password "${{ secrets.APPLE_APP_PASSWORD }}" \
+            --team-id "${{ secrets.APPLE_TEAM_ID }}" \
+            --wait
+
+          # Staple the notarization ticket to the DMG for offline verification
+          xcrun stapler staple BatteryMonitor.dmg
+
+          # Verify the stapled ticket is valid
+          xcrun stapler validate BatteryMonitor.dmg
+
       - name: Package CLI binary
         run: |
           # Package CLI tool separately
           cp .build/arm64-apple-macosx/release/BatteryMonitorCLI .
+
+          # Sign the CLI binary with Developer ID before packaging
+          codesign --force --options runtime --timestamp \
+            --sign "Developer ID Application: ${{ secrets.APPLE_TEAM_NAME }} (${{ secrets.APPLE_TEAM_ID }})" \
+            BatteryMonitorCLI
+
           tar -czf BatteryMonitorCLI.tar.gz BatteryMonitorCLI
           shasum -a 256 BatteryMonitorCLI.tar.gz > BatteryMonitorCLI.tar.gz.sha256
 
@@ -172,3 +224,9 @@ jobs:
             BatteryMonitor.dmg.sha256 \
             BatteryMonitorCLI.tar.gz \
             BatteryMonitorCLI.tar.gz.sha256
+
+      - name: Cleanup keychain
+        if: always()
+        run: |
+          # Remove the temporary keychain to avoid leaking credentials
+          security delete-keychain build.keychain
