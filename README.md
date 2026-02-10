@@ -232,18 +232,22 @@ Cycle Count:           Excellent (very low) (69 cycles)
 
 ## Installation
 
-### Download Pre-Built Release (Recommended)
+### Homebrew (Recommended)
+
+```bash
+brew tap swack-tools/tap
+brew install --cask battery-monitor
+```
+
+### Download DMG
 
 Download the latest DMG installer from [GitHub Releases][releases]:
 
-[releases]: https://github.com/swackhamer/mac-battery-info-swift/releases
+[releases]: https://github.com/swack-tools/battery-info-mac/releases
 
 1. Download `BatteryMonitor.dmg`
 2. Open the DMG file
 3. Drag `Battery Monitor.app` to your Applications folder
-4. **Right-click** on the app and select **Open** (first launch only)
-   - macOS will block the app because it's not notarized
-   - This is normal - see [INSTALL.md](INSTALL.md) for details
 
 For detailed installation instructions and troubleshooting,
 see [INSTALL.md](INSTALL.md).
