@@ -431,6 +431,7 @@ Python `power_info.py`:
 ✅ **System Integration**: Native IOKit and SwiftUI
 
 ✅ **No Runtime**: Works without Python installed
+
 ✅ **Menu Bar**: Always-on monitoring with beautiful UI
 
 ---
