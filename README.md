@@ -419,11 +419,17 @@ Python `power_info.py`:
 ### Advantages of Swift Version
 
 ✅ **Dual Interface**: Choose menu bar GUI or CLI
+
 ✅ **Performance**: 25% faster execution
+
 ✅ **Type Safety**: Compile-time error checking
+
 ✅ **Memory**: 68% less memory usage
+
 ✅ **Distribution**: Single self-contained binary
+
 ✅ **System Integration**: Native IOKit and SwiftUI
+
 ✅ **No Runtime**: Works without Python installed
 ✅ **Menu Bar**: Always-on monitoring with beautiful UI
 
