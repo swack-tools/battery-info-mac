@@ -1,0 +1,345 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		12F07442B41D5976DB01441C /* SystemCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBB4F304AD1FE9B106F13FBD /* SystemCommands.swift */; };
+		17621D56088F9C54C11164BA /* USBCPDExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F481FB9440202497E5EEB24 /* USBCPDExtension.swift */; };
+		2C4B925E689A7B855A6F658A /* PreferencesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 102D86EFBC5A7CFCE2B6AEC4 /* PreferencesView.swift */; };
+		705C4407D2EF3EF085849E44 /* SystemInfoExtended.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB2B4599EC62DAEE084B0F9A /* SystemInfoExtended.swift */; };
+		77A4A013D89ABE55EDB59F7C /* BatteryDecoders.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E394451CCE17661F5DED41F /* BatteryDecoders.swift */; };
+		AB9E1B9E5502AB45295D1517 /* BatteryData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79FEE7369DFFD4FA5E2276BF /* BatteryData.swift */; };
+		C16F3AFA8B1C6B9E4AF1A7A7 /* BatteryDisplayInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51CFDA49DC17ACAC6C7D182A /* BatteryDisplayInfo.swift */; };
+		C8C303E703FA756E56F2C7DF /* BatteryDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C31CB28133163E8CD2F244CC /* BatteryDetailView.swift */; };
+		CBEADB189B7E0472D84CBCF0 /* PreferencesManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E63472B0C2B74860209E254B /* PreferencesManager.swift */; };
+		D83110AED6C2DA30385D256A /* IOKitBattery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36AF8201EEF14245C009A1E5 /* IOKitBattery.swift */; };
+		F049EF33100FA77942CC01E8 /* BatteryDataManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6699FA8408EBDA178F2442A5 /* BatteryDataManager.swift */; };
+		F3A209DAC3DE809373B84B90 /* BatteryMenuBarApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA8C7AAF7148E7172D314F63 /* BatteryMenuBarApp.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		0F481FB9440202497E5EEB24 /* USBCPDExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USBCPDExtension.swift; sourceTree = "<group>"; };
+		102D86EFBC5A7CFCE2B6AEC4 /* PreferencesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesView.swift; sourceTree = "<group>"; };
+		36AF8201EEF14245C009A1E5 /* IOKitBattery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOKitBattery.swift; sourceTree = "<group>"; };
+		51CFDA49DC17ACAC6C7D182A /* BatteryDisplayInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryDisplayInfo.swift; sourceTree = "<group>"; };
+		6699FA8408EBDA178F2442A5 /* BatteryDataManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryDataManager.swift; sourceTree = "<group>"; };
+		6E394451CCE17661F5DED41F /* BatteryDecoders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryDecoders.swift; sourceTree = "<group>"; };
+		79FEE7369DFFD4FA5E2276BF /* BatteryData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryData.swift; sourceTree = "<group>"; };
+		9045F497E3C694B58514F767 /* BatteryMonitor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BatteryMonitor.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		BBB4F304AD1FE9B106F13FBD /* SystemCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemCommands.swift; sourceTree = "<group>"; };
+		C31CB28133163E8CD2F244CC /* BatteryDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryDetailView.swift; sourceTree = "<group>"; };
+		E63472B0C2B74860209E254B /* PreferencesManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesManager.swift; sourceTree = "<group>"; };
+		EB2B4599EC62DAEE084B0F9A /* SystemInfoExtended.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemInfoExtended.swift; sourceTree = "<group>"; };
+		FA8C7AAF7148E7172D314F63 /* BatteryMenuBarApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryMenuBarApp.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		0D1E857412C879AC8E5B3722 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				9045F497E3C694B58514F767 /* BatteryMonitor.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		9E3C5656F8ADC380BE5C8D5B /* BatteryMonitor */ = {
+			isa = PBXGroup;
+			children = (
+				79FEE7369DFFD4FA5E2276BF /* BatteryData.swift */,
+				6699FA8408EBDA178F2442A5 /* BatteryDataManager.swift */,
+				6E394451CCE17661F5DED41F /* BatteryDecoders.swift */,
+				C31CB28133163E8CD2F244CC /* BatteryDetailView.swift */,
+				51CFDA49DC17ACAC6C7D182A /* BatteryDisplayInfo.swift */,
+				FA8C7AAF7148E7172D314F63 /* BatteryMenuBarApp.swift */,
+				36AF8201EEF14245C009A1E5 /* IOKitBattery.swift */,
+				E63472B0C2B74860209E254B /* PreferencesManager.swift */,
+				102D86EFBC5A7CFCE2B6AEC4 /* PreferencesView.swift */,
+				BBB4F304AD1FE9B106F13FBD /* SystemCommands.swift */,
+				EB2B4599EC62DAEE084B0F9A /* SystemInfoExtended.swift */,
+				0F481FB9440202497E5EEB24 /* USBCPDExtension.swift */,
+			);
+			name = BatteryMonitor;
+			path = Sources/BatteryMonitor;
+			sourceTree = "<group>";
+		};
+		EF9FA6A189DDA57C40EB5486 = {
+			isa = PBXGroup;
+			children = (
+				9E3C5656F8ADC380BE5C8D5B /* BatteryMonitor */,
+				0D1E857412C879AC8E5B3722 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		7E226F554DBA1B6EA876BDF6 /* BatteryMonitor */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7C73C2FFC1D05F65436EA50D /* Build configuration list for PBXNativeTarget "BatteryMonitor" */;
+			buildPhases = (
+				FFD6FEB04F28123EF0D69B86 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = BatteryMonitor;
+			packageProductDependencies = (
+			);
+			productName = BatteryMonitor;
+			productReference = 9045F497E3C694B58514F767 /* BatteryMonitor.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		4F7B17D58A974F3B3AB81C02 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1500;
+				TargetAttributes = {
+					7E226F554DBA1B6EA876BDF6 = {
+						DevelopmentTeam = WHS8S6ZW43;
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 287BEEB4E625A43D7436E890 /* Build configuration list for PBXProject "BatteryMonitor" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = EF9FA6A189DDA57C40EB5486;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				7E226F554DBA1B6EA876BDF6 /* BatteryMonitor */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		FFD6FEB04F28123EF0D69B86 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AB9E1B9E5502AB45295D1517 /* BatteryData.swift in Sources */,
+				F049EF33100FA77942CC01E8 /* BatteryDataManager.swift in Sources */,
+				77A4A013D89ABE55EDB59F7C /* BatteryDecoders.swift in Sources */,
+				C8C303E703FA756E56F2C7DF /* BatteryDetailView.swift in Sources */,
+				C16F3AFA8B1C6B9E4AF1A7A7 /* BatteryDisplayInfo.swift in Sources */,
+				F3A209DAC3DE809373B84B90 /* BatteryMenuBarApp.swift in Sources */,
+				D83110AED6C2DA30385D256A /* IOKitBattery.swift in Sources */,
+				CBEADB189B7E0472D84CBCF0 /* PreferencesManager.swift in Sources */,
+				2C4B925E689A7B855A6F658A /* PreferencesView.swift in Sources */,
+				12F07442B41D5976DB01441C /* SystemCommands.swift in Sources */,
+				705C4407D2EF3EF085849E44 /* SystemInfoExtended.swift in Sources */,
+				17621D56088F9C54C11164BA /* USBCPDExtension.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		5AFF912DC7AA90D8050007E8 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		5C8F16BC4AB67C5236D6B441 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		A2D689C6DEC220691F23BDE1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = SupportFiles/BatteryMonitor.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = WHS8S6ZW43;
+				ENABLE_HARDENED_RUNTIME = YES;
+				INFOPLIST_FILE = SupportFiles/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MARKETING_VERSION = 1.0.4;
+				OTHER_SWIFT_FLAGS = "-parse-as-library";
+				PRODUCT_BUNDLE_IDENTIFIER = com.swacktools.batterymonitor;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.9;
+			};
+			name = Debug;
+		};
+		B24549C197DFECC415E200EB /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = SupportFiles/BatteryMonitor.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = WHS8S6ZW43;
+				ENABLE_HARDENED_RUNTIME = YES;
+				INFOPLIST_FILE = SupportFiles/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MARKETING_VERSION = 1.0.4;
+				OTHER_SWIFT_FLAGS = "-parse-as-library";
+				PRODUCT_BUNDLE_IDENTIFIER = com.swacktools.batterymonitor;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.9;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		287BEEB4E625A43D7436E890 /* Build configuration list for PBXProject "BatteryMonitor" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5C8F16BC4AB67C5236D6B441 /* Debug */,
+				5AFF912DC7AA90D8050007E8 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		7C73C2FFC1D05F65436EA50D /* Build configuration list for PBXNativeTarget "BatteryMonitor" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A2D689C6DEC220691F23BDE1 /* Debug */,
+				B24549C197DFECC415E200EB /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 4F7B17D58A974F3B3AB81C02 /* Project object */;
+}
