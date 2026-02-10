@@ -111,7 +111,7 @@ brew install --cask battery-monitor
 ```bash
 # Clone and build
 git clone https://github.com/swack-tools/battery-info-mac.git
-cd mac-battery-info-swift
+cd battery-info-mac
 swift build -c release --product BatteryMonitor
 
 # Run the menu bar app
@@ -269,7 +269,7 @@ xcode-select --install
 
 # Clone the repository
 git clone https://github.com/swack-tools/battery-info-mac.git
-cd mac-battery-info-swift
+cd battery-info-mac
 
 # Build both versions
 swift build -c release
