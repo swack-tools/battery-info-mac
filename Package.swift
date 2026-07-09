@@ -43,6 +43,10 @@ let package = Package(
                 .linkedFramework("IOKit"),
                 .linkedFramework("AppKit")
             ]
+        ),
+        .testTarget(
+            name: "BatteryMonitorCLITests",
+            dependencies: ["BatteryMonitorCLI"]
         )
     ]
 )
