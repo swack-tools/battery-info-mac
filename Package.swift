@@ -12,41 +12,35 @@ let package = Package(
             targets: ["BatteryMonitor"]
         ),
         .executable(
-            name: "BatteryMonitorCLI",
-            targets: ["BatteryMonitorCLI"]
+            name: "BatteryMonitorPrivilegedHelper",
+            targets: ["BatteryMonitorPrivilegedHelper"]
         )
     ],
     targets: [
+        .target(
+            name: "BatteryMonitorShared"
+        ),
         // GUI Menu Bar App
         .executableTarget(
             name: "BatteryMonitor",
-            dependencies: [],
-            exclude: ["main_cli.swift"],
+            dependencies: ["BatteryMonitorShared"],
             swiftSettings: [
                 .unsafeFlags(["-parse-as-library"])
             ],
             linkerSettings: [
                 .linkedFramework("IOKit"),
                 .linkedFramework("AppKit"),
-                .linkedFramework("SwiftUI")
+                .linkedFramework("SwiftUI"),
+                .linkedFramework("ServiceManagement")
             ]
         ),
-        // CLI Tool
         .executableTarget(
-            name: "BatteryMonitorCLI",
-            dependencies: [],
-            path: "Sources/BatteryMonitorCLI",
-            swiftSettings: [
-                .unsafeFlags(["-parse-as-library"])
-            ],
-            linkerSettings: [
-                .linkedFramework("IOKit"),
-                .linkedFramework("AppKit")
-            ]
+            name: "BatteryMonitorPrivilegedHelper",
+            dependencies: ["BatteryMonitorShared"]
         ),
         .testTarget(
-            name: "BatteryMonitorCLITests",
-            dependencies: ["BatteryMonitorCLI"]
+            name: "BatteryMonitorTests",
+            dependencies: ["BatteryMonitor", "BatteryMonitorShared"]
         )
     ]
 )

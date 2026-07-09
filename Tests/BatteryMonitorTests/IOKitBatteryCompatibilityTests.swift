@@ -1,5 +1,5 @@
 import XCTest
-@testable import BatteryMonitorCLI
+@testable import BatteryMonitor
 
 final class IOKitBatteryCompatibilityTests: XCTestCase {
     func testLegacyRootPropertiesTakePrecedenceOverNestedFallbacks() {

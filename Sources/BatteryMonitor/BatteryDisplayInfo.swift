@@ -1,4 +1,5 @@
 import Foundation
+import BatteryMonitorShared
 
 /// Comprehensive battery information for display in the menu bar app
 struct BatteryDisplayInfo {
@@ -170,6 +171,12 @@ struct BatteryDisplayInfo {
     var sleepWakeHistory: [String] = []
     var scheduledEvents: [String] = []
 
+    // General Thermals
+    var thermalReadings: [ThermalReading] = []
+    var componentPowers: [ComponentPowerReading] = []
+    var throttlingStatus: ThrottlingStatus? = nil
+    var privilegedTelemetryStatus: String = "Not registered"
+
     /// Fetch current battery information from IOKit
     static func fetch() -> BatteryDisplayInfo {
         var info = BatteryDisplayInfo()
@@ -178,7 +185,7 @@ struct BatteryDisplayInfo {
         var batteryData = IOKitBattery.getBatteryInfo()
         let chargerData = IOKitBattery.getChargerInfo()
         let systemInfo = SystemCommands.getSystemInfo()
-        let usbcInfo = IOKitBattery.getUSBCPDInfoFromBattery()  // Use same function as CLI
+        let usbcInfo = IOKitBattery.getUSBCPDInfoFromBattery()
         let displayInfo = SystemCommands.getDisplayInfo()
         let usbPortInfo = SystemCommands.getUSBPortInfo()
         let powerMgmtInfo = SystemCommands.getPowerManagementInfo()
@@ -654,6 +661,87 @@ struct BatteryDisplayInfo {
         }
 
         // ========== POWER BREAKDOWN ==========
+        if batteryData.temperature > 0 {
+            info.thermalReadings.append(ThermalReading(
+                name: "Battery",
+                celsius: batteryData.temperature,
+                source: "IOKit"
+            ))
+        }
+
+        if let virtualTemperature = batteryData.virtualTemperature, virtualTemperature > 0 {
+            info.thermalReadings.append(ThermalReading(
+                name: "Battery Virtual",
+                celsius: virtualTemperature,
+                source: "IOKit"
+            ))
+        }
+
+        if let maxTemp = batteryData.maximumTemperature {
+            info.thermalReadings.append(ThermalReading(
+                name: "Battery Lifetime Max",
+                celsius: maxTemp,
+                source: "IOKit LifetimeData"
+            ))
+        }
+
+        if let avgTemp = batteryData.averageTemperature {
+            info.thermalReadings.append(ThermalReading(
+                name: "Battery Lifetime Average",
+                celsius: avgTemp,
+                source: "IOKit LifetimeData"
+            ))
+        }
+
+        if let minTemp = batteryData.minimumTemperature {
+            info.thermalReadings.append(ThermalReading(
+                name: "Battery Lifetime Min",
+                celsius: minTemp,
+                source: "IOKit LifetimeData"
+            ))
+        }
+
+        if let thermalStatus = SystemCommands.getThermalStatus() {
+            info.throttlingStatus = thermalStatus
+            info.thermalPressure = thermalStatus.level
+        }
+
+        if let cached = PrivilegedHelperManager.cachedTelemetry() {
+            let snapshot = cached.snapshot
+            info.privilegedTelemetryStatus = "Active, updated \(PrivilegedHelperManager.ageDescription(cached.age))"
+            info.componentPowers = snapshot.componentPowers
+            info.thermalReadings.append(contentsOf: snapshot.thermalReadings)
+            info.throttlingStatus = snapshot.throttling
+            info.thermalPressure = snapshot.thermalPressure ?? snapshot.throttling.level
+            info.hasPowerMetrics = !snapshot.componentPowers.isEmpty
+
+            let cpuPower = snapshot.componentPowers.first { $0.name == "CPU" }?.watts ?? 0
+            let gpuPower = snapshot.componentPowers.first { $0.name == "GPU" }?.watts ?? 0
+            let anePower = snapshot.componentPowers.first { $0.name == "ANE" }?.watts ?? 0
+            let dramPower = snapshot.componentPowers.first { $0.name == "DRAM" }?.watts ?? 0
+            let combinedPower = cpuPower + gpuPower + anePower + dramPower
+
+            if cpuPower > 0 {
+                info.cpuPower = String(format: "%.1fW", cpuPower)
+            }
+            if gpuPower > 0 {
+                info.gpuPower = String(format: "%.1fW", gpuPower)
+            }
+            if anePower > 0 {
+                info.anePower = String(format: "%.1fW", anePower)
+            }
+            if dramPower > 0 {
+                info.dramPower = String(format: "%.1fW", dramPower)
+            }
+            if combinedPower > 0 {
+                info.combinedPower = String(format: "%.1fW", combinedPower)
+                info.totalSystemPower = String(format: "%.1fW", combinedPower)
+                info.peakComponent = String(format: "%.1fW", max(cpuPower, gpuPower, anePower, dramPower))
+            }
+        } else {
+            info.privilegedTelemetryStatus = PrivilegedHelperManager.shared.statusText()
+        }
+
         // Use real-time system load from PowerTelemetryData if available
         if let systemLoad = batteryData.systemLoadPower, systemLoad > 0 {
             info.systemLoad = String(format: "%.1fW", systemLoad)
@@ -672,8 +760,9 @@ struct BatteryDisplayInfo {
             }
         }
 
-        // Get power metrics (requires sudo for full details)
-        if var powerMetrics = SystemCommands.getPowerMetrics() {
+        // Direct powermetrics access only works if the entire process is root. Normal menu-bar
+        // launches use the privileged helper cache above instead.
+        if !info.hasPowerMetrics, var powerMetrics = SystemCommands.getPowerMetrics() {
             // Enrich with battery data for power flow calculations
             SystemCommands.enrichPowerMetrics(&powerMetrics, battery: batteryData)
 
@@ -783,4 +872,3 @@ fileprivate func decodeChargerConfig(_ config: Int) -> String {
 
     return meanings.isEmpty ? "Normal" : meanings.joined(separator: ", ")
 }
-

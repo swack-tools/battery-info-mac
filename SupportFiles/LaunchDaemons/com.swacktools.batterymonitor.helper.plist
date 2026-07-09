@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.swacktools.batterymonitor.helper</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Applications/BatteryMonitor.app/Contents/MacOS/BatteryMonitorPrivilegedHelper</string>
+		<string>--interval</string>
+		<string>10</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>StandardOutPath</key>
+	<string>/Library/Logs/BatteryMonitorPrivilegedHelper.log</string>
+	<key>StandardErrorPath</key>
+	<string>/Library/Logs/BatteryMonitorPrivilegedHelper.log</string>
+</dict>
+</plist>
