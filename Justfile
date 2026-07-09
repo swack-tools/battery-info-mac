@@ -2,6 +2,7 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 
 test:
     swift test
+    bash Tests/ci/build_dmg_icon_test.sh
     bash Tests/ci/publish_release_test.sh
 
 lint:
