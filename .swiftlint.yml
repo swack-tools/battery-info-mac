@@ -1,0 +1,25 @@
+excluded:
+  - .build
+  - BatteryMonitor.xcodeproj
+
+disabled_rules:
+  - cyclomatic_complexity
+  - file_length
+  - for_where
+  - function_body_length
+  - identifier_name
+  - implicit_optional_initialization
+  - large_tuple
+  - line_length
+  - multiple_closures_with_trailing_closure
+  - private_over_fileprivate
+  - statement_position
+  - todo
+  - type_body_length
+  - unused_closure_parameter
+  - unused_optional_binding
+
+included:
+  - Sources
+  - Tests
+  - Package.swift
