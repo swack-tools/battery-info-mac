@@ -45,9 +45,9 @@ Download the latest `BatteryMonitor.dmg` from
 The release DMG is signed, notarized, and includes an Applications symlink for
 drag-and-drop installation.
 
-After launching the app, use the General Thermals helper controls if you want
-privileged component power and throttling telemetry. macOS may require admin
-approval in System Settings before the LaunchDaemon starts.
+After launching the app, use the visible Root Helper toggle to persist the
+privileged helper as a root LaunchDaemon. macOS may require admin approval in
+System Settings before the LaunchDaemon starts.
 
 ### Homebrew
 
@@ -80,8 +80,8 @@ VERSION=dev just build-dmg
 open .build/artifacts/BatteryMonitor.dmg
 ```
 
-The menu bar app runs in the user session. The privileged helper is a separate
-root LaunchDaemon that writes sanitized telemetry JSON to:
+The menu bar app runs in the user session. The Root Helper toggle registers or
+unregisters a separate root LaunchDaemon that writes sanitized telemetry JSON to:
 
 ```text
 /Library/Application Support/BatteryMonitor/privileged-telemetry.json
