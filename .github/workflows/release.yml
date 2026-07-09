@@ -5,6 +5,11 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to build or update, for example v1.1.0'
+        required: true
+        default: 'v1.1.0'
 
 permissions:
   contents: write
@@ -52,12 +57,20 @@ jobs:
           swift build -c release --product BatteryMonitor
           swift build -c release --product BatteryMonitorCLI
 
-      - name: Get version from tag
+      - name: Get version
         id: get_version
         run: |
           if [[ "${GITHUB_REF}" =~ ^refs/tags/v(.*)$ ]]; then
             echo "version=${BASH_REMATCH[1]}" >> $GITHUB_OUTPUT
             echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            tag="${{ inputs.tag }}"
+            if [[ ! "$tag" =~ ^v[0-9]+(\.[0-9]+){2}$ ]]; then
+              echo "Manual release tag must look like v1.1.0" >&2
+              exit 1
+            fi
+            echo "version=${tag#v}" >> $GITHUB_OUTPUT
+            echo "tag=$tag" >> $GITHUB_OUTPUT
           else
             echo "version=dev" >> $GITHUB_OUTPUT
             echo "tag=dev" >> $GITHUB_OUTPUT
@@ -182,19 +195,18 @@ jobs:
           cat BatteryMonitor.dmg.sha256
           cat BatteryMonitorCLI.tar.gz.sha256
 
-      - name: Create GitHub Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Write release notes
         run: |
-          gh release create ${{ steps.get_version.outputs.tag }} \
-            --title "Battery Monitor ${{ steps.get_version.outputs.version }}" \
-            --notes "## Battery Monitor v${{ steps.get_version.outputs.version }}
+          cat > release-notes.md <<EOF
+          ## Battery Monitor v${{ steps.get_version.outputs.version }}
+
+          upgrade for OSx 27
 
           ### macOS Menu Bar Battery Monitoring Tool
 
           **Requirements:**
           - macOS 13.0 (Ventura) or later
-          - Apple Silicon (M1/M2/M3/M4) Mac
+          - Apple Silicon Mac
 
           ### Installation
           1. Download \`BatteryMonitor.dmg\`
@@ -203,21 +215,29 @@ jobs:
           4. Launch from Applications or Spotlight
 
           ### Features
-          - 🔋 Real-time battery percentage in menu bar
-          - ⚡ Charging indicators
-          - 📊 Detailed battery health metrics
-          - 🔌 USB-C Power Delivery diagnostics
-          - 🎨 Dark mode support
-          - 🔄 Auto-refresh every 30 seconds
+          - Menu bar battery percentage and charging status
+          - Detailed battery health, cycle, and capacity metrics
+          - macOS 26 and 27 battery data layout compatibility
+          - USB-C Power Delivery diagnostics
+          - Signed and notarized DMG installer
+          - Signed CLI archive
 
           ### What's Included
-          - \`BatteryMonitor.dmg\` - Installer package (${{ steps.get_version.outputs.version }})
+          - \`BatteryMonitor.dmg\` - Signed and notarized installer package (${{ steps.get_version.outputs.version }})
           - \`BatteryMonitor.dmg.sha256\` - Checksum for verification
-          - \`BatteryMonitorCLI.tar.gz\` - Command-line tool
+          - \`BatteryMonitorCLI.tar.gz\` - Signed command-line tool
           - \`BatteryMonitorCLI.tar.gz.sha256\` - CLI checksum
+          EOF
 
-          ---
-          🤖 Built with Swift and SwiftUI" \
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.get_version.outputs.tag }}
+          RELEASE_TITLE: Battery Monitor ${{ steps.get_version.outputs.version }}
+          RELEASE_TARGET: ${{ github.sha }}
+          RELEASE_NOTES_FILE: release-notes.md
+        run: |
+          bash scripts/publish_release.sh \
             BatteryMonitor.dmg \
             BatteryMonitor.dmg.sha256 \
             BatteryMonitorCLI.tar.gz \

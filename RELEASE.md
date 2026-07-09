@@ -60,8 +60,10 @@ You can also trigger the workflow manually from GitHub:
 2. Select "Build and Release" workflow
 3. Click "Run workflow"
 4. Choose the branch (usually main)
+5. Enter the release tag to create or update, for example `v1.1.0`
 
-This creates a development release without a version tag.
+Manual runs build from the selected branch and create or update the release
+identified by the tag input. Existing release assets are replaced.
 
 ## Version Numbering
 
@@ -156,10 +158,10 @@ After creating release:
 
 The `.github/workflows/release.yml` workflow:
 
-- **Trigger**: Push of tags matching `v*` pattern
+- **Trigger**: Push of tags matching `v*` pattern, or manual dispatch
 - **Runner**: `macos-latest` (GitHub-hosted)
 - **Build time**: ~1-2 minutes
-- **Artifacts**: DMG (~200KB), CLI (~50KB compressed)
+- **Artifacts**: Signed/notarized DMG, signed CLI archive, checksums
 - **Swift version**: Latest stable Xcode on runner
 
 ### Workflow Steps
@@ -169,10 +171,13 @@ The `.github/workflows/release.yml` workflow:
 3. Build release binaries
 4. Extract version from tag
 5. Create .app bundle with Info.plist
-6. Create DMG installer
-7. Generate checksums
-8. Create GitHub release
-9. Upload all artifacts
+6. Sign app bundle
+7. Create DMG installer
+8. Notarize, staple, and validate DMG
+9. Sign and package CLI
+10. Generate checksums
+11. Create or update GitHub release
+12. Upload all artifacts, replacing existing assets if needed
 
 ## Notes
 
@@ -180,7 +185,7 @@ The `.github/workflows/release.yml` workflow:
 - Binary is built for Apple Silicon (arm64-apple-macosx)
 - Info.plist version is automatically set from git tag
 - Build number is set from GitHub Actions run number
-- Release notes are auto-generated from template
+- Release notes are generated from the workflow template
 
 ---
 
