@@ -14,11 +14,13 @@ targets:
       - path: Sources/BatteryMonitor
         excludes:
           - main_cli.swift
-    resources:
       - path: SupportFiles/Assets.xcassets
+        buildPhase: resources
     info:
       path: SupportFiles/Info.plist
       properties:
+        CFBundleIconFile: AppIcon
+        CFBundleIconName: AppIcon
         LSUIElement: true
         NSPrincipalClass: NSApplication
     entitlements:
