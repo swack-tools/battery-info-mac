@@ -85,6 +85,8 @@ jobs:
           # Copy binary
           cp .build/arm64-apple-macosx/release/BatteryMonitor \
              BatteryMonitor.app/Contents/MacOS/BatteryMonitor
+          cp SupportFiles/AppIcon.icns \
+             BatteryMonitor.app/Contents/Resources/AppIcon.icns
 
           # Create Info.plist
           cat > BatteryMonitor.app/Contents/Info.plist << 'EOF'
@@ -96,6 +98,10 @@ jobs:
           	<string>en</string>
           	<key>CFBundleExecutable</key>
           	<string>BatteryMonitor</string>
+          	<key>CFBundleIconFile</key>
+          	<string>AppIcon</string>
+          	<key>CFBundleIconName</key>
+          	<string>AppIcon</string>
           	<key>CFBundleIdentifier</key>
           	<string>com.swacktools.batterymonitor</string>
           	<key>CFBundleInfoDictionaryVersion</key>
@@ -216,6 +222,7 @@ jobs:
 
           ### Features
           - Menu bar battery percentage and charging status
+          - macOS-style battery app icon
           - Detailed battery health, cycle, and capacity metrics
           - macOS 26 and 27 battery data layout compatibility
           - USB-C Power Delivery diagnostics
