@@ -4,6 +4,11 @@ import IOKit.ps
 
 // MARK: - IOKit Battery Access
 
+enum BatteryPropertySource {
+    case rootBattery
+    case batteryPack
+}
+
 class IOKitBattery {
 
     /// Get battery information directly from IOKit
@@ -33,6 +38,11 @@ class IOKitBattery {
         if let service = getAppleSmartBatteryService() {
             enrichBatteryData(&batteryData, from: service)
             IOObjectRelease(service)
+        }
+
+        if let packService = getAppleSmartBatteryPackService() {
+            enrichBatteryData(&batteryData, from: packService, source: .batteryPack)
+            IOObjectRelease(packService)
         }
 
         return batteryData
@@ -218,8 +228,22 @@ class IOKitBattery {
         return service != 0 ? service : nil
     }
 
+    /// Get the AppleSmartBatteryPack IOService
+    static func getAppleSmartBatteryPackService() -> io_service_t? {
+        let service = IOServiceGetMatchingService(
+            kIOMainPortDefault,
+            IOServiceMatching("AppleSmartBatteryPack")
+        )
+
+        return service != 0 ? service : nil
+    }
+
     /// Enrich battery data with additional IORegistry properties
     private static func enrichBatteryData(_ data: inout BatteryData, from service: io_service_t) {
+        enrichBatteryData(&data, from: service, source: .rootBattery)
+    }
+
+    private static func enrichBatteryData(_ data: inout BatteryData, from service: io_service_t, source: BatteryPropertySource) {
         // Get all properties
         var properties: Unmanaged<CFMutableDictionary>?
         let result = IORegistryEntryCreateCFProperties(service, &properties, kCFAllocatorDefault, 0)
@@ -229,50 +253,144 @@ class IOKitBattery {
             return
         }
 
+        enrichBatteryData(&data, fromProperties: props, source: source)
+    }
+
+    static func enrichBatteryData(_ data: inout BatteryData, fromProperties props: [String: Any], source: BatteryPropertySource) {
+        let batteryProps = props["BatteryData"] as? [String: Any]
+        let orderedProps: [[String: Any]]
+        switch source {
+        case .rootBattery:
+            orderedProps = [props, batteryProps].compactMap { $0 }
+        case .batteryPack:
+            orderedProps = [batteryProps, props].compactMap { $0 }
+        }
+
+        func firstInt(_ key: String) -> Int? {
+            for dict in orderedProps {
+                if let value = dict[key] as? Int {
+                    return value
+                }
+                if let value = dict[key] as? Int64 {
+                    return Int(value)
+                }
+                if let value = dict[key] as? NSNumber {
+                    return value.intValue
+                }
+            }
+            return nil
+        }
+
+        func firstInt64(_ key: String) -> Int64? {
+            for dict in orderedProps {
+                if let value = dict[key] as? Int64 {
+                    return value
+                }
+                if let value = dict[key] as? Int {
+                    return Int64(value)
+                }
+                if let value = dict[key] as? NSNumber {
+                    return value.int64Value
+                }
+            }
+            return nil
+        }
+
+        func firstBool(_ key: String) -> Bool? {
+            for dict in orderedProps {
+                if let value = dict[key] as? Bool {
+                    return value
+                }
+                if let value = dict[key] as? NSNumber {
+                    return value.boolValue
+                }
+            }
+            return nil
+        }
+
+        func firstString(_ key: String) -> String? {
+            for dict in orderedProps {
+                if let value = dict[key] as? String {
+                    return value
+                }
+            }
+            return nil
+        }
+
+        func firstData(_ key: String) -> Data? {
+            for dict in orderedProps {
+                if let value = dict[key] as? Data {
+                    return value
+                }
+            }
+            return nil
+        }
+
+        func firstIntArray(_ key: String) -> [Int]? {
+            for dict in orderedProps {
+                if let value = dict[key] as? [Int] {
+                    return value
+                }
+            }
+            return nil
+        }
+
+        func firstDictionary(_ key: String) -> [String: Any]? {
+            for dict in orderedProps {
+                if let value = dict[key] as? [String: Any] {
+                    return value
+                }
+            }
+            return nil
+        }
+
+        func signedMilliamps(_ raw: Int) -> Double {
+            raw > 32767 ? Double(raw - 65536) : Double(raw)
+        }
+
+        func signedMilliamps(_ raw: Int64) -> Double {
+            raw > Int64.max / 2 ? Double(Int64(bitPattern: UInt64(raw))) : Double(raw)
+        }
+
+        func legacyTemperatureCelsius(_ raw: Int) -> Double {
+            (Double(raw) / 10.0) - 273.15
+        }
+
+        func packTemperatureCelsius(_ raw: Int) -> Double {
+            Double(raw) / 100.0
+        }
+
         // Voltage (mV to V)
-        if let voltage = props["Voltage"] as? Int {
+        if let voltage = firstInt("Voltage"), data.voltage == 0 || source == .rootBattery {
             data.voltage = Double(voltage) / 1000.0
         }
 
         // Amperage (handle signed/unsigned overflow)
-        if let amperage = props["Amperage"] as? Int {
-            // If value is very large, it's actually negative (2's complement)
-            if amperage > 32767 {
-                data.amperage = Double(amperage - 65536)
-            } else {
-                data.amperage = Double(amperage)
-            }
+        if let amperage = firstInt("Amperage"), data.amperage == 0 || source == .rootBattery {
+            data.amperage = signedMilliamps(amperage)
         }
 
         // InstantAmperage (handle signed/unsigned overflow for 64-bit values)
-        if let instantAmp = props["InstantAmperage"] as? Int64 {
-            // For negative values stored as unsigned, convert from 2's complement
-            if instantAmp > Int64.max / 2 {
-                data.instantAmperage = Double(Int64(bitPattern: UInt64(instantAmp)))
-            } else {
-                data.instantAmperage = Double(instantAmp)
-            }
-        } else if let instantAmp = props["InstantAmperage"] as? Int {
-            // Fallback to Int if not Int64
-            if instantAmp > 32767 {
-                data.instantAmperage = Double(instantAmp - 65536)
-            } else {
-                data.instantAmperage = Double(instantAmp)
-            }
+        if let instantAmp = firstInt64("InstantAmperage"), data.instantAmperage == 0 || source == .rootBattery {
+            data.instantAmperage = signedMilliamps(instantAmp)
         }
 
-        // Temperature (decikelvin to Celsius)
-        if let temp = props["Temperature"] as? Int {
-            data.temperature = (Double(temp) / 10.0) - 273.15
+        if data.temperature == 0, let temp = firstInt("Temperature") {
+            switch source {
+            case .rootBattery:
+                data.temperature = legacyTemperatureCelsius(temp)
+            case .batteryPack:
+                data.temperature = packTemperatureCelsius(temp)
+            }
         }
 
         // Charging status from IORegistry (more accurate than IOPowerSources)
-        if let isCharging = props["IsCharging"] as? Bool {
+        if let isCharging = firstBool("IsCharging") {
             data.isCharging = isCharging
         }
 
         // FullyCharged flag
-        if let fullyCharged = props["FullyCharged"] as? Bool {
+        if let fullyCharged = firstBool("FullyCharged") {
             data.isCharged = fullyCharged
             // If fully charged, override isCharging to false
             if fullyCharged {
@@ -281,39 +399,42 @@ class IOKitBattery {
         }
 
         // Cycle count
-        if let cycles = props["CycleCount"] as? Int {
+        if let cycles = firstInt("CycleCount"), data.cycleCount == 0 {
             data.cycleCount = cycles
         }
 
         // Time to empty - always use IORegistry value (matches Python behavior)
         // AvgTimeToEmpty is more accurate than PowerSource API's TimeToEmpty
-        if let avgTimeToEmpty = props["AvgTimeToEmpty"] as? Int {
+        if let avgTimeToEmpty = firstInt("AvgTimeToEmpty") {
             data.timeToEmpty = avgTimeToEmpty
         }
 
         // Design capacity
-        if let designCap = props["DesignCapacity"] as? Int {
+        if let designCap = firstInt("DesignCapacity"), data.designCapacity == 0 {
             data.designCapacity = designCap
         }
 
         // Max capacity (may be percentage or mAh depending on system)
-        if let maxCap = props["MaxCapacity"] as? Int {
+        if let maxCap = firstInt("MaxCapacity"), data.maxCapacity == 0 {
             data.maxCapacity = maxCap
         }
 
-        // Apple Raw Max Capacity (actual FCC in mAh)
-        if let rawMaxCap = props["AppleRawMaxCapacity"] as? Int {
-            data.appleRawMaxCapacity = rawMaxCap
+        if data.appleRawMaxCapacity == 0 {
+            if let rawMaxCap = firstInt("AppleRawMaxCapacity"), rawMaxCap > 200 {
+                data.appleRawMaxCapacity = rawMaxCap
+            } else if let fullChargeCapacity = firstInt("FullChargeCapacity"), fullChargeCapacity > 200 {
+                data.appleRawMaxCapacity = fullChargeCapacity
+            }
         }
 
         // Nominal Charge Capacity (rated capacity in mAh)
-        if let nominalCap = props["NominalChargeCapacity"] as? Int {
+        if let nominalCap = firstInt("NominalChargeCapacity"), data.nominalChargeCapacity == 0 {
             data.nominalChargeCapacity = nominalCap
         }
 
         // Current capacity - keep as percentage from IOPowerSources/IORegistry
         // Don't overwrite with AppleRawCurrentCapacity (mAh) - that's stored separately
-        if let currentCap = props["CurrentCapacity"] as? Int {
+        if let currentCap = firstInt("CurrentCapacity") {
             // CurrentCapacity is the percentage macOS reports (0-100)
             if currentCap >= 0 && currentCap <= 100 {
                 data.currentCapacity = currentCap  // Keep as percentage
@@ -322,14 +443,7 @@ class IOKitBattery {
         // AppleRawCurrentCapacity is available via calculation when needed
 
         // Cell voltages (check both root and BatteryData)
-        var cellVoltages: [Int]? = props["CellVoltage"] as? [Int]
-
-        // If not at root, check inside BatteryData
-        if cellVoltages == nil, let batteryData = props["BatteryData"] as? [String: Any] {
-            cellVoltages = batteryData["CellVoltage"] as? [Int]
-        }
-
-        if let voltages = cellVoltages {
+        if let voltages = firstIntArray("CellVoltage") {
             if voltages.count > 0 { data.cellVoltage1 = Double(voltages[0]) / 1000.0 }
             if voltages.count > 1 { data.cellVoltage2 = Double(voltages[1]) / 1000.0 }
             if voltages.count > 2 { data.cellVoltage3 = Double(voltages[2]) / 1000.0 }
@@ -345,50 +459,54 @@ class IOKitBattery {
         }
 
         // Pack voltage
-        if let packVoltage = props["PackVoltage"] as? Int {
+        if let packVoltage = firstInt("PackVoltage"), data.packVoltage == nil {
             data.packVoltage = Double(packVoltage) / 1000.0
         }
 
         // Internal resistance (mΩ) - check multiple sources
-        if let resistance = props["BatteryResistance"] as? Int {
+        if let resistance = firstInt("BatteryResistance"), data.internalResistance == nil {
             data.internalResistance = Double(resistance)
-        } else if let batteryData = props["BatteryData"] as? [String: Any],
-                  let weightedRa = batteryData["WeightedRa"] as? [Int], weightedRa.count > 0 {
+        } else if data.internalResistance == nil,
+                  let weightedRa = firstIntArray("WeightedRa"), weightedRa.count > 0 {
             // Calculate average of WeightedRa array
             let sum = weightedRa.reduce(0, +)
             data.internalResistance = Double(sum) / Double(weightedRa.count)
         }
 
         // Gauge State of Charge (check multiple locations)
-        if let gaugeSoC = props["GaugeSOC"] as? Int {
+        if let gaugeSoC = firstInt("GaugeSOC") {
             data.gaugeSoC = gaugeSoC
-        } else if let batteryData = props["BatteryData"] as? [String: Any],
-                  let stateOfCharge = batteryData["StateOfCharge"] as? Int {
+        } else if let stateOfCharge = firstInt("StateOfCharge") {
             data.gaugeSoC = stateOfCharge
         }
 
         // Virtual temperature
-        if let virtualTemp = props["VirtualTemperature"] as? Int {
-            data.virtualTemperature = (Double(virtualTemp) / 10.0) - 273.15
+        if data.virtualTemperature == nil, let virtualTemp = firstInt("VirtualTemperature") {
+            switch source {
+            case .rootBattery:
+                data.virtualTemperature = legacyTemperatureCelsius(virtualTemp)
+            case .batteryPack:
+                data.virtualTemperature = packTemperatureCelsius(virtualTemp)
+            }
         }
 
         // Chemistry ID (check both root and BatteryData)
-        if let chemID = props["ChemID"] as? Int {
-            data.chemID = chemID
-            data.chemistry = decodeChemID(chemID)
-        } else if let batteryData = props["BatteryData"] as? [String: Any],
-                  let chemID = batteryData["ChemID"] as? Int {
+        if let chemID = firstInt("ChemID") {
             data.chemID = chemID
             data.chemistry = decodeChemID(chemID)
         }
 
         // Device Name (battery chip model like "bq40z651")
-        if let deviceName = props["DeviceName"] as? String {
+        if let deviceName = firstString("DeviceName"), data.deviceName == nil {
             data.deviceName = deviceName
         }
 
+        if let serial = firstString("Serial"), data.serialNumber == nil {
+            data.serialNumber = serial
+        }
+
         // Manufacturing info
-        if let mfgData = props["ManufacturerData"] as? Data {
+        if let mfgData = firstData("ManufacturerData") ?? firstData("MfgData") {
             // Try to decode manufacturer data
             if let decoded = decodeManufacturerData(mfgData) {
                 if data.manufacturer == nil {
@@ -400,20 +518,7 @@ class IOKitBattery {
         }
 
         // Manufacture date (check both root and BatteryData, can be Int or Int64)
-        var mfgDateRaw: Int64? = nil
-        if let mfgDate = props["ManufactureDate"] as? Int64 {
-            mfgDateRaw = mfgDate
-        } else if let mfgDate = props["ManufactureDate"] as? Int {
-            mfgDateRaw = Int64(mfgDate)
-        } else if let batteryData = props["BatteryData"] as? [String: Any] {
-            if let mfgDate = batteryData["ManufactureDate"] as? Int64 {
-                mfgDateRaw = mfgDate
-            } else if let mfgDate = batteryData["ManufactureDate"] as? Int {
-                mfgDateRaw = Int64(mfgDate)
-            }
-        }
-
-        if let mfgDate = mfgDateRaw {
+        if data.manufactureDate == nil, let mfgDate = firstInt64("ManufactureDate") {
             data.manufactureDate = decodeManufactureDate(mfgDate)
 
             // Calculate battery age in days
@@ -423,107 +528,76 @@ class IOKitBattery {
         }
 
         // Gas Gauge Firmware version from IORegistry
-        if let fwVersion = props["GasGaugeFirmwareVersion"] as? Int {
+        if let fwVersion = firstInt("GasGaugeFirmwareVersion"), data.gasGaugeFirmwareVersion == nil {
             data.gasGaugeFirmwareVersion = String(format: "v%d", fwVersion)
         }
 
         // Status flags
-        if let permFailure = props["PermanentFailureStatus"] as? Int {
+        if let permFailure = firstInt("PermanentFailureStatus"), data.permanentFailureStatus == nil {
             data.permanentFailureStatus = permFailure
         }
 
-        if let gaugeFlag = props["GaugeFlagRaw"] as? Int {
+        if let gaugeFlag = firstInt("GaugeFlagRaw"), data.gaugeFlagRaw == nil {
             data.gaugeFlagRaw = gaugeFlag
         }
 
-        if let miscStatus = props["MiscStatus"] as? Int {
+        if let miscStatus = firstInt("MiscStatus"), data.miscStatus == nil {
             data.miscStatus = miscStatus
         }
 
         // Pack reserve
-        if let packReserve = props["PackReserve"] as? Int {
+        if let packReserve = firstInt("PackReserve"), data.packReserve == nil {
             data.packReserve = packReserve
         }
 
         // Critical level
-        if let atCritical = props["AtCriticalLevel"] as? Bool {
+        if let atCritical = firstBool("AtCriticalLevel") {
             data.atCriticalLevel = atCritical
         }
 
         // Best charger port (BestAdapterIndex in IORegistry)
-        if let bestPort = props["BestAdapterIndex"] as? Int {
+        if let bestPort = firstInt("BestAdapterIndex"), data.bestChargerPort == nil {
             data.bestChargerPort = bestPort
         }
 
-        // Check BatteryData subdictionary for additional fields
-        if let batteryData = props["BatteryData"] as? [String: Any] {
-            if data.miscStatus == nil, let ms = batteryData["MiscStatus"] as? Int {
-                data.miscStatus = ms
-            }
-
-            // RSense Open Count
-            if let rsenseOpen = batteryData["BatteryRsenseOpenCount"] as? Int {
-                data.rsenseOpenCount = rsenseOpen
-            }
-
-            // Gauge Write Count (DataFlashWriteCount)
-            if let gaugeWrites = batteryData["DataFlashWriteCount"] as? Int {
-                data.gaugeWriteCount = gaugeWrites
-            }
-
-            // Gauge Status (field name is GaugeFlagRaw)
-            if let gaugeStatus = batteryData["GaugeFlagRaw"] as? Int {
-                data.gaugeStatus = gaugeStatus
-            } else if let gaugeStatus = batteryData["GaugeStatus"] as? Int {
-                data.gaugeStatus = gaugeStatus
-            }
-
-            // PostChargeWaitSeconds (check in BatteryData)
-            if let postCharge = batteryData["PostChargeWaitSeconds"] as? Int {
-                data.postChargeWaitSeconds = postCharge
-            }
-
-            // PostDischargeWaitSeconds (check in BatteryData)
-            if let postDischarge = batteryData["PostDischargeWaitSeconds"] as? Int {
-                data.postDischargeWaitSeconds = postDischarge
-            }
-
-            // InvalidWakeSeconds (check in BatteryData)
-            if let invalidWake = batteryData["InvalidWakeSeconds"] as? Int {
-                data.invalidWakeSeconds = invalidWake
-            }
-
-            // ChargeAccumulated (field name is ChargeAccum)
-            if let chargeAccum = batteryData["ChargeAccum"] as? Int {
-                data.chargeAccumulated = chargeAccum
-            } else if let chargeAccum = batteryData["ChargeAccumulated"] as? Int {
-                data.chargeAccumulated = chargeAccum
-            }
-
-            // Daily SOC (State of Charge) tracking
-            if let dailyMax = batteryData["DailyMaxSoc"] as? Int {
-                data.dailyChargeMax = dailyMax
-            }
-            if let dailyMin = batteryData["DailyMinSoc"] as? Int {
-                data.dailyChargeMin = dailyMin
-            }
-
-            // Carrier Mode (Shipping Mode) - check in BatteryData
-            if let carrierMode = batteryData["CarrierMode"] as? [String: Any] {
-                if let status = carrierMode["CarrierModeStatus"] as? Int {
-                    data.shippingModeActive = (status != 0)
-                }
-                if let highVoltage = carrierMode["CarrierModeHighVoltage"] as? Int {
-                    data.shippingModeVoltageMax = Double(highVoltage) / 1000.0  // mV to V
-                }
-                if let lowVoltage = carrierMode["CarrierModeLowVoltage"] as? Int {
-                    data.shippingModeVoltageMin = Double(lowVoltage) / 1000.0  // mV to V
-                }
-            }
+        if let rsenseOpen = firstInt("BatteryRsenseOpenCount"), data.rsenseOpenCount == nil {
+            data.rsenseOpenCount = rsenseOpen
         }
 
-        // Carrier Mode (Shipping Mode) - also check at root level
-        if data.shippingModeVoltageMax == nil, let carrierMode = props["CarrierMode"] as? [String: Any] {
+        if let gaugeWrites = firstInt("DataFlashWriteCount"), data.gaugeWriteCount == nil {
+            data.gaugeWriteCount = gaugeWrites
+        }
+
+        if let gaugeStatus = firstInt("GaugeFlagRaw") ?? firstInt("GaugeStatus"), data.gaugeStatus == nil {
+            data.gaugeStatus = gaugeStatus
+        }
+
+        if let postCharge = firstInt("PostChargeWaitSeconds"), data.postChargeWaitSeconds == nil {
+            data.postChargeWaitSeconds = postCharge
+        }
+
+        if let postDischarge = firstInt("PostDischargeWaitSeconds"), data.postDischargeWaitSeconds == nil {
+            data.postDischargeWaitSeconds = postDischarge
+        }
+
+        if let invalidWake = firstInt("InvalidWakeSeconds") ?? (props["BatteryInvalidWakeSeconds"] as? Int),
+           data.invalidWakeSeconds == nil {
+            data.invalidWakeSeconds = invalidWake
+        }
+
+        if let chargeAccum = firstInt("ChargeAccum") ?? firstInt("ChargeAccumulated"), data.chargeAccumulated == nil {
+            data.chargeAccumulated = chargeAccum
+        }
+
+        if let dailyMax = firstInt("DailyMaxSoc"), data.dailyChargeMax == nil {
+            data.dailyChargeMax = dailyMax
+        }
+        if let dailyMin = firstInt("DailyMinSoc"), data.dailyChargeMin == nil {
+            data.dailyChargeMin = dailyMin
+        }
+
+        if let carrierMode = firstDictionary("CarrierMode") ?? (props["CarrierMode"] as? [String: Any]),
+           data.shippingModeVoltageMax == nil {
             if let status = carrierMode["CarrierModeStatus"] as? Int {
                 data.shippingModeActive = (status != 0)
             }
@@ -536,27 +610,12 @@ class IOKitBattery {
         }
 
         // Cell Disconnect Count (at root level)
-        if let cellDisconnect = props["BatteryCellDisconnectCount"] as? Int {
+        if let cellDisconnect = firstInt("BatteryCellDisconnectCount"), data.cellDisconnectCount == nil {
             data.cellDisconnectCount = cellDisconnect
         }
 
-        // PostChargeWaitSeconds (also check at root level)
-        if data.postChargeWaitSeconds == nil, let postCharge = props["PostChargeWaitSeconds"] as? Int {
-            data.postChargeWaitSeconds = postCharge
-        }
-
-        // PostDischargeWaitSeconds (also check at root level)
-        if data.postDischargeWaitSeconds == nil, let postDischarge = props["PostDischargeWaitSeconds"] as? Int {
-            data.postDischargeWaitSeconds = postDischarge
-        }
-
-        // BatteryInvalidWakeSeconds (at root level)
-        if data.invalidWakeSeconds == nil, let invalidWake = props["BatteryInvalidWakeSeconds"] as? Int {
-            data.invalidWakeSeconds = invalidWake
-        }
-
         // Health
-        if let batteryHealth = props["BatteryHealth"] as? String {
+        if let batteryHealth = firstString("BatteryHealth") {
             data.condition = batteryHealth
         }
 
@@ -570,43 +629,36 @@ class IOKitBattery {
         }
 
         // Lifetime Data (can be at root or inside BatteryData)
-        var lifetimeData: [String: Any]? = props["LifetimeData"] as? [String: Any]
-
-        // If not found at root, check inside BatteryData
-        if lifetimeData == nil, let batteryData = props["BatteryData"] as? [String: Any] {
-            lifetimeData = batteryData["LifetimeData"] as? [String: Any]
-        }
-
-        if let lifetime = lifetimeData {
+        if let lifetime = firstDictionary("LifetimeData") {
             // Total operating time (already in minutes)
-            if let totalTime = lifetime["TotalOperatingTime"] as? Int {
+            if let totalTime = lifetime["TotalOperatingTime"] as? Int, data.totalOperatingTime == nil {
                 data.totalOperatingTime = totalTime  // Already in minutes
             }
 
             // Average temperature (deciCelsius - tenths of degree Celsius)
-            if let avgTemp = lifetime["AverageTemperature"] as? Int {
+            if let avgTemp = lifetime["AverageTemperature"] as? Int, data.averageTemperature == nil {
                 data.averageTemperature = Double(avgTemp) / 10.0
             }
 
             // Maximum temperature (Celsius)
-            if let maxTemp = lifetime["MaximumTemperature"] as? Int {
+            if let maxTemp = lifetime["MaximumTemperature"] as? Int, data.maximumTemperature == nil {
                 data.maximumTemperature = Double(maxTemp)
             }
 
             // Minimum temperature (Celsius)
-            if let minTemp = lifetime["MinimumTemperature"] as? Int {
+            if let minTemp = lifetime["MinimumTemperature"] as? Int, data.minimumTemperature == nil {
                 data.minimumTemperature = Double(minTemp)
             }
 
             // Cycle count at last Qmax calibration
-            if let cycleLastQmax = lifetime["CycleCountLastQmax"] as? Int {
+            if let cycleLastQmax = lifetime["CycleCountLastQmax"] as? Int, data.cycleCountLastQmax == nil {
                 data.cycleCountLastQmax = cycleLastQmax
             }
 
             // Gauge measured maximum capacity (can be Int or array)
-            if let qmax = lifetime["Qmax"] as? Int {
+            if let qmax = lifetime["Qmax"] as? Int, data.gaugeQmax == nil {
                 data.gaugeQmax = qmax
-            } else if let qmaxArray = lifetime["Qmax"] as? [Int], qmaxArray.count > 0 {
+            } else if data.gaugeQmax == nil, let qmaxArray = lifetime["Qmax"] as? [Int], qmaxArray.count > 0 {
                 // Average the Qmax values
                 let sum = qmaxArray.reduce(0, +)
                 data.gaugeQmax = sum / qmaxArray.count
@@ -614,17 +666,19 @@ class IOKitBattery {
         }
 
         // Also check for Qmax at BatteryData level (not just LifetimeData)
-        if data.gaugeQmax == nil, let batteryData = props["BatteryData"] as? [String: Any] {
-            if let qmax = batteryData["Qmax"] as? Int {
-                data.gaugeQmax = qmax
-            } else if let qmaxArray = batteryData["Qmax"] as? [Int], qmaxArray.count > 0 {
-                let sum = qmaxArray.reduce(0, +)
-                data.gaugeQmax = sum / qmaxArray.count
-            }
+        if data.gaugeQmax == nil, let qmax = firstInt("Qmax") {
+            data.gaugeQmax = qmax
+        } else if data.gaugeQmax == nil, let qmaxArray = batteryProps?["Qmax"] as? [Int], qmaxArray.count > 0 {
+            let sum = qmaxArray.reduce(0, +)
+            data.gaugeQmax = sum / qmaxArray.count
+        }
+
+        if data.designCycleCount == 1000, let designCycles = firstInt("DesignCycleCount9C"), designCycles > 0 {
+            data.designCycleCount = designCycles
         }
 
         // PowerTelemetryData - real-time power metrics and accumulated energy
-        if let ptd = props["PowerTelemetryData"] as? [String: Any] {
+        if let ptd = firstDictionary("PowerTelemetryData") {
             // Accumulated system energy (for lifetime energy calculation)
             // IORegistry stores as NSNumber, need to extract as Int64
             if let energyNum = ptd["AccumulatedSystemEnergyConsumed"] as? NSNumber {
@@ -637,12 +691,7 @@ class IOKitBattery {
             }
 
             if let adapterCurrent = ptd["SystemCurrentIn"] as? Int {
-                // Handle signed/unsigned overflow
-                if adapterCurrent > 32767 {
-                    data.adapterCurrent = Double(adapterCurrent - 65536) / 1000.0  // mA to A
-                } else {
-                    data.adapterCurrent = Double(adapterCurrent) / 1000.0  // mA to A
-                }
+                data.adapterCurrent = signedMilliamps(adapterCurrent) / 1000.0  // mA to A
             }
 
             // Real-time adapter power input (from SystemPowerIn)
