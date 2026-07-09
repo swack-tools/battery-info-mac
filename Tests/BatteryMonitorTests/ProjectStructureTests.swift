@@ -31,6 +31,14 @@ final class ProjectStructureTests: XCTestCase {
         XCTAssertFalse(workflow.contains("scripts/publish_release.sh"))
     }
 
+    func testReleaseWorkflowUsesAvailableHostedMacOSRunner() throws {
+        let workflow = try String(contentsOf: repoRoot.appendingPathComponent(".github/workflows/release.yml"))
+
+        XCTAssertTrue(workflow.contains("runs-on: macos-latest"))
+        XCTAssertFalse(workflow.contains("runs-on: macos-26"))
+        XCTAssertTrue(workflow.contains("if [[ -d /Applications/Xcode_26.6.app ]]"))
+    }
+
     func testLaunchDaemonPlistIsBundled() {
         XCTAssertTrue(FileManager.default.fileExists(atPath: repoRoot.appendingPathComponent("SupportFiles/LaunchDaemons/com.swacktools.batterymonitor.helper.plist").path))
     }
