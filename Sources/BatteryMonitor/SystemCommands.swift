@@ -1,4 +1,5 @@
 import Foundation
+import BatteryMonitorShared
 
 // MARK: - System Command Wrappers
 
@@ -226,9 +227,17 @@ class SystemCommands {
         return result.isEmpty ? nil : result
     }
 
-    // MARK: - powermetrics (requires sudo)
+    static func getThermalStatus() -> ThrottlingStatus? {
+        guard let output = runCommand("/usr/bin/pmset", arguments: ["-g", "therm"]) else {
+            return nil
+        }
 
-    /// Get power metrics from powermetrics (requires root/sudo)
+        return PMSetThermalParser.parse(output)
+    }
+
+    // MARK: - powermetrics (requires root)
+
+    /// Get power metrics from powermetrics when the current process is already root.
     static func getPowerMetrics() -> PowerMetrics? {
         // Check if running as root
         guard getuid() == 0 else {

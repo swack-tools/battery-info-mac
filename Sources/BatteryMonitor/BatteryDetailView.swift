@@ -1,4 +1,5 @@
 import SwiftUI
+import BatteryMonitorShared
 
 // MARK: - Constants
 private let sectionHeaderFontSize: CGFloat = 18
@@ -188,6 +189,9 @@ struct BatteryDetailView: View {
 
                 // USB-C Power Delivery (always show - has sink capabilities even when unplugged)
                 USBCPowerDeliverySection(info: dataManager.batteryInfo)
+
+                // General Thermals
+                GeneralThermalsSection(info: dataManager.batteryInfo)
 
                 // Power Breakdown
                 if dataManager.batteryInfo.hasPowerMetrics {
@@ -1198,6 +1202,127 @@ struct PowerManagementSection: View {
                     .tracking(0.3)
             }
         }
+    }
+}
+
+// MARK: - General Thermals Section
+struct GeneralThermalsSection: View {
+    let info: BatteryDisplayInfo
+    @State private var helperActionMessage: String?
+
+    var body: some View {
+        DisclosureGroup {
+            VStack(alignment: .leading, spacing: 10) {
+                if !info.thermalReadings.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(info.thermalReadings, id: \.name) { reading in
+                            InfoRow(
+                                label: reading.name,
+                                value: String(format: "%.1f C", reading.celsius),
+                                valueColor: color(for: reading.band)
+                            )
+                        }
+                    }
+                }
+
+                if let throttling = info.throttlingStatus {
+                    Divider()
+                    InfoRow(
+                        label: "Throttling",
+                        value: "\(throttling.percentage)% (\(throttling.level))",
+                        valueColor: throttlingColor(for: throttling)
+                    )
+                }
+
+                if !info.componentPowers.isEmpty {
+                    Divider()
+                    Text("Component Power")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .padding(.top, 4)
+
+                    ForEach(info.componentPowers, id: \.name) { component in
+                        InfoRow(
+                            label: component.name,
+                            value: String(format: "%.2fW", component.watts),
+                            valueColor: .orange
+                        )
+                    }
+                }
+
+                Divider()
+                InfoRow(
+                    label: "Privileged Helper",
+                    value: helperActionMessage ?? info.privilegedTelemetryStatus,
+                    valueColor: helperStatusColor
+                )
+
+                HStack(spacing: 8) {
+                    Button(action: {
+                        helperActionMessage = PrivilegedHelperManager.shared.registerHelper()
+                    }) {
+                        Label("Register Helper", systemImage: "lock.shield")
+                    }
+                    .buttonStyle(.bordered)
+
+                    Button(action: {
+                        PrivilegedHelperManager.shared.openLoginItemsSettings()
+                    }) {
+                        Label("Approval Settings", systemImage: "gearshape")
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .padding(.top, 4)
+            }
+            .padding(.top, 8)
+        } label: {
+            HStack {
+                Image(systemName: "thermometer.medium")
+                    .foregroundColor(.red)
+                    .font(.system(size: sectionHeaderFontSize))
+                Text("General Thermals")
+                    .font(.sectionHeader)
+                    .tracking(0.3)
+            }
+        }
+    }
+
+    private var helperStatusColor: Color {
+        let status = (helperActionMessage ?? info.privilegedTelemetryStatus).lowercased()
+        if status.contains("active") || status.contains("registered") {
+            return .green
+        }
+        if status.contains("approval") {
+            return .orange
+        }
+        if status.contains("failed") || status.contains("not found") {
+            return .red
+        }
+        return .secondary
+    }
+
+    private func color(for band: ThermalBand) -> Color {
+        switch band {
+        case .green:
+            return .green
+        case .orange:
+            return .orange
+        case .red:
+            return .red
+        }
+    }
+
+    private func throttlingColor(for status: ThrottlingStatus) -> Color {
+        if status.percentage >= 80 || status.level.lowercased().contains("heavy") {
+            return .red
+        }
+        if status.percentage >= 40 || status.level.lowercased().contains("moderate") {
+            return .orange
+        }
+        if status.percentage > 0 || status.level.lowercased().contains("light") {
+            return .yellow
+        }
+        return .green
     }
 }
 
