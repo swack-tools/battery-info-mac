@@ -3,6 +3,67 @@ import BatteryMonitorShared
 import Foundation
 import ServiceManagement
 
+enum PrivilegedHelperRegistration: Equatable {
+    case enabled
+    case requiresApproval
+    case notRegistered
+    case notFound
+    case unsupported
+    case unknown
+}
+
+struct PrivilegedHelperControlState: Equatable {
+    static let toggleTitle = "Run as root at startup"
+
+    let registration: PrivilegedHelperRegistration
+    let telemetryStatus: String
+
+    var isToggleOn: Bool {
+        registration == .enabled || registration == .requiresApproval
+    }
+
+    var statusText: String {
+        switch registration {
+        case .enabled:
+            return "Root helper registered"
+        case .requiresApproval:
+            return "Admin approval needed"
+        case .notRegistered:
+            return "Root helper off"
+        case .notFound:
+            return "Bundled helper not found"
+        case .unsupported:
+            return "Unsupported on this macOS version"
+        case .unknown:
+            return "Unknown helper status"
+        }
+    }
+
+    var detailText: String {
+        switch registration {
+        case .enabled:
+            if telemetryStatus.lowercased().contains("active") {
+                return "The root LaunchDaemon persists across login and boot after registration. \(telemetryStatus)."
+            }
+            return "The root LaunchDaemon persists across login and boot after registration."
+        case .requiresApproval:
+            return "macOS needs admin approval before the root LaunchDaemon can run."
+        case .notRegistered:
+            return "Enable this to register the root LaunchDaemon for privileged thermal data."
+        case .notFound:
+            return "Install the app from the DMG so the bundled LaunchDaemon plist is available."
+        case .unsupported:
+            return "LaunchDaemon registration requires macOS 13 or later."
+        case .unknown:
+            return "Refresh or open System Settings to check helper registration."
+        }
+    }
+
+    var showsApprovalButton: Bool {
+        registration == .requiresApproval
+    }
+}
+
 final class PrivilegedHelperManager {
     static let shared = PrivilegedHelperManager()
 
@@ -36,12 +97,27 @@ final class PrivilegedHelperManager {
         return CachedTelemetry(snapshot: snapshot, age: age)
     }
 
-    func statusText() -> String {
+    func registrationState() -> PrivilegedHelperRegistration {
         guard #available(macOS 13.0, *) else {
-            return "Unsupported on this macOS version"
+            return .unsupported
         }
 
         switch service.status {
+        case .enabled:
+            return .enabled
+        case .requiresApproval:
+            return .requiresApproval
+        case .notRegistered:
+            return .notRegistered
+        case .notFound:
+            return .notFound
+        @unknown default:
+            return .unknown
+        }
+    }
+
+    func statusText() -> String {
+        switch registrationState() {
         case .enabled:
             return "Registered, waiting for telemetry"
         case .requiresApproval:
@@ -50,7 +126,9 @@ final class PrivilegedHelperManager {
             return "Not registered"
         case .notFound:
             return "Bundled daemon plist not found"
-        @unknown default:
+        case .unsupported:
+            return "Unsupported on this macOS version"
+        case .unknown:
             return "Unknown helper status"
         }
     }
