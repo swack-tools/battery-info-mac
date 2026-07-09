@@ -15,6 +15,7 @@ rm -rf "$app_dir" "$dmg_staging" "$dmg_path"
 mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Resources"
 
 cp "${build_dir}/BatteryMonitor" "$app_dir/Contents/MacOS/BatteryMonitor"
+cp "SupportFiles/AppIcon.icns" "$app_dir/Contents/Resources/AppIcon.icns"
 
 cat > "$app_dir/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -25,6 +26,8 @@ cat > "$app_dir/Contents/Info.plist" <<EOF
   <string>en</string>
   <key>CFBundleExecutable</key>
   <string>BatteryMonitor</string>
+  <key>CFBundleIconFile</key>
+  <string>AppIcon</string>
   <key>CFBundleIdentifier</key>
   <string>com.swacktools.batterymonitor</string>
   <key>CFBundleInfoDictionaryVersion</key>

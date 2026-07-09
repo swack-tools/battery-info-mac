@@ -18,6 +18,7 @@
 		CBEADB189B7E0472D84CBCF0 /* PreferencesManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E63472B0C2B74860209E254B /* PreferencesManager.swift */; };
 		D83110AED6C2DA30385D256A /* IOKitBattery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36AF8201EEF14245C009A1E5 /* IOKitBattery.swift */; };
 		F049EF33100FA77942CC01E8 /* BatteryDataManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6699FA8408EBDA178F2442A5 /* BatteryDataManager.swift */; };
+		F0CF208BFD07D2F369BFB95E /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 7F9160C6646EEFCA7A9AA82A /* Assets.xcassets */; };
 		F3A209DAC3DE809373B84B90 /* BatteryMenuBarApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA8C7AAF7148E7172D314F63 /* BatteryMenuBarApp.swift */; };
 /* End PBXBuildFile section */
 
@@ -29,6 +30,7 @@
 		6699FA8408EBDA178F2442A5 /* BatteryDataManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryDataManager.swift; sourceTree = "<group>"; };
 		6E394451CCE17661F5DED41F /* BatteryDecoders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryDecoders.swift; sourceTree = "<group>"; };
 		79FEE7369DFFD4FA5E2276BF /* BatteryData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryData.swift; sourceTree = "<group>"; };
+		7F9160C6646EEFCA7A9AA82A /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		9045F497E3C694B58514F767 /* BatteryMonitor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BatteryMonitor.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BBB4F304AD1FE9B106F13FBD /* SystemCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemCommands.swift; sourceTree = "<group>"; };
 		C31CB28133163E8CD2F244CC /* BatteryDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryDetailView.swift; sourceTree = "<group>"; };
@@ -44,6 +46,14 @@
 				9045F497E3C694B58514F767 /* BatteryMonitor.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		93FE4FD48D8D445B4EEF8A18 /* SupportFiles */ = {
+			isa = PBXGroup;
+			children = (
+				7F9160C6646EEFCA7A9AA82A /* Assets.xcassets */,
+			);
+			path = SupportFiles;
 			sourceTree = "<group>";
 		};
 		9E3C5656F8ADC380BE5C8D5B /* BatteryMonitor */ = {
@@ -70,6 +80,7 @@
 			isa = PBXGroup;
 			children = (
 				9E3C5656F8ADC380BE5C8D5B /* BatteryMonitor */,
+				93FE4FD48D8D445B4EEF8A18 /* SupportFiles */,
 				0D1E857412C879AC8E5B3722 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -82,6 +93,7 @@
 			buildConfigurationList = 7C73C2FFC1D05F65436EA50D /* Build configuration list for PBXNativeTarget "BatteryMonitor" */;
 			buildPhases = (
 				FFD6FEB04F28123EF0D69B86 /* Sources */,
+				BEDF248E3C9ACCC70BFE1279 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -110,7 +122,6 @@
 				};
 			};
 			buildConfigurationList = 287BEEB4E625A43D7436E890 /* Build configuration list for PBXProject "BatteryMonitor" */;
-			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -120,6 +131,7 @@
 			mainGroup = EF9FA6A189DDA57C40EB5486;
 			minimizedProjectReferenceProxies = 1;
 			preferredProjectObjectVersion = 77;
+			productRefGroup = 0D1E857412C879AC8E5B3722 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -127,6 +139,17 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		BEDF248E3C9ACCC70BFE1279 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F0CF208BFD07D2F369BFB95E /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		FFD6FEB04F28123EF0D69B86 /* Sources */ = {
