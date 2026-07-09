@@ -176,6 +176,7 @@ struct BatteryDisplayInfo {
     var componentPowers: [ComponentPowerReading] = []
     var throttlingStatus: ThrottlingStatus? = nil
     var privilegedTelemetryStatus: String = "Not registered"
+    var privilegedHelperRegistration: PrivilegedHelperRegistration = .notRegistered
 
     /// Fetch current battery information from IOKit
     static func fetch() -> BatteryDisplayInfo {
@@ -705,6 +706,8 @@ struct BatteryDisplayInfo {
             info.throttlingStatus = thermalStatus
             info.thermalPressure = thermalStatus.level
         }
+
+        info.privilegedHelperRegistration = PrivilegedHelperManager.shared.registrationState()
 
         if let cached = PrivilegedHelperManager.cachedTelemetry() {
             let snapshot = cached.snapshot

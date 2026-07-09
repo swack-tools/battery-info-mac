@@ -189,7 +189,7 @@ jobs:
           2. Open the DMG file
           3. Drag \`BatteryMonitor.app\` to your Applications folder
           4. Launch from Applications or Spotlight
-          5. Use the app's helper controls to register the privileged thermal helper when needed
+          5. Use the Root Helper toggle to register the privileged thermal helper when needed
 
           ### Features
           - Menu bar battery percentage and charging status

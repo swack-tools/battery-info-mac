@@ -142,7 +142,7 @@ After creating release:
 - [ ] Download and mount the DMG
 - [ ] Install the app into `/Applications`
 - [ ] Launch the menu bar app
-- [ ] Register or approve the privileged helper if testing thermal telemetry
+- [ ] Use the Root Helper toggle to register or approve the privileged helper if testing thermal telemetry
 - [ ] Verify Gatekeeper accepts the app
 
 ## Workflow Details

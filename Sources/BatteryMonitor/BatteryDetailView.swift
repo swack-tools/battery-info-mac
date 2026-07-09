@@ -168,6 +168,9 @@ struct BatteryDetailView: View {
                 // Battery Status Summary
                 StatusSummarySection(info: dataManager.batteryInfo)
 
+                // Root Helper
+                RootHelperControlSection(info: dataManager.batteryInfo)
+
                 // Battery Health
                 BatteryHealthSection(info: dataManager.batteryInfo)
 
@@ -1205,10 +1208,107 @@ struct PowerManagementSection: View {
     }
 }
 
+// MARK: - Root Helper Section
+struct RootHelperControlSection: View {
+    let info: BatteryDisplayInfo
+    @State private var registration = PrivilegedHelperManager.shared.registrationState()
+    @State private var actionMessage: String?
+    @Environment(\.colorScheme) var colorScheme
+
+    private var controlState: PrivilegedHelperControlState {
+        PrivilegedHelperControlState(
+            registration: registration,
+            telemetryStatus: actionMessage ?? info.privilegedTelemetryStatus
+        )
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Image(systemName: "lock.shield.fill")
+                    .foregroundColor(.green)
+                    .font(.system(size: sectionHeaderFontSize))
+                Text("Root Helper")
+                    .font(.sectionHeader)
+                    .tracking(0.3)
+                Spacer()
+            }
+
+            Toggle(PrivilegedHelperControlState.toggleTitle, isOn: Binding(
+                get: { controlState.isToggleOn },
+                set: { isEnabled in
+                    setHelperEnabled(isEnabled)
+                }
+            ))
+            .toggleStyle(.switch)
+            .font(.infoValue)
+
+            InfoRow(
+                label: "Status",
+                value: controlState.statusText,
+                valueColor: statusColor(for: registration)
+            )
+
+            Text(controlState.detailText)
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if controlState.showsApprovalButton {
+                Button(action: {
+                    PrivilegedHelperManager.shared.openLoginItemsSettings()
+                }) {
+                    Label("Approval Settings", systemImage: "gearshape")
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(colorScheme == .dark
+                    ? Color.white.opacity(0.03)
+                    : Color.white.opacity(0.5))
+                .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.3 : 0.1),
+                       radius: 8, x: 0, y: 2)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(colorScheme == .dark
+                    ? Color.white.opacity(0.1)
+                    : Color.black.opacity(0.05),
+                    lineWidth: 1)
+        )
+        .onAppear {
+            registration = PrivilegedHelperManager.shared.registrationState()
+        }
+    }
+
+    private func setHelperEnabled(_ isEnabled: Bool) {
+        actionMessage = isEnabled
+            ? PrivilegedHelperManager.shared.registerHelper()
+            : PrivilegedHelperManager.shared.unregisterHelper()
+        registration = PrivilegedHelperManager.shared.registrationState()
+        BatteryDataManager.shared.refresh()
+    }
+
+    private func statusColor(for registration: PrivilegedHelperRegistration) -> Color {
+        switch registration {
+        case .enabled:
+            return .green
+        case .requiresApproval:
+            return .orange
+        case .notFound, .unknown:
+            return .red
+        case .notRegistered, .unsupported:
+            return .secondary
+        }
+    }
+}
+
 // MARK: - General Thermals Section
 struct GeneralThermalsSection: View {
     let info: BatteryDisplayInfo
-    @State private var helperActionMessage: String?
 
     var body: some View {
         DisclosureGroup {
@@ -1250,29 +1350,10 @@ struct GeneralThermalsSection: View {
                     }
                 }
 
-                Divider()
-                InfoRow(
-                    label: "Privileged Helper",
-                    value: helperActionMessage ?? info.privilegedTelemetryStatus,
-                    valueColor: helperStatusColor
-                )
-
-                HStack(spacing: 8) {
-                    Button(action: {
-                        helperActionMessage = PrivilegedHelperManager.shared.registerHelper()
-                    }) {
-                        Label("Register Helper", systemImage: "lock.shield")
-                    }
-                    .buttonStyle(.bordered)
-
-                    Button(action: {
-                        PrivilegedHelperManager.shared.openLoginItemsSettings()
-                    }) {
-                        Label("Approval Settings", systemImage: "gearshape")
-                    }
-                    .buttonStyle(.bordered)
+                if info.componentPowers.isEmpty {
+                    Divider()
+                    InfoRow(label: "Privileged Telemetry", value: info.privilegedTelemetryStatus, valueColor: .secondary)
                 }
-                .padding(.top, 4)
             }
             .padding(.top, 8)
         } label: {
@@ -1285,20 +1366,6 @@ struct GeneralThermalsSection: View {
                     .tracking(0.3)
             }
         }
-    }
-
-    private var helperStatusColor: Color {
-        let status = (helperActionMessage ?? info.privilegedTelemetryStatus).lowercased()
-        if status.contains("active") || status.contains("registered") {
-            return .green
-        }
-        if status.contains("approval") {
-            return .orange
-        }
-        if status.contains("failed") || status.contains("not found") {
-            return .red
-        }
-        return .secondary
     }
 
     private func color(for band: ThermalBand) -> Color {

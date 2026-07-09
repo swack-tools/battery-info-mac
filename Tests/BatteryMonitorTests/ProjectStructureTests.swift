@@ -34,4 +34,13 @@ final class ProjectStructureTests: XCTestCase {
     func testLaunchDaemonPlistIsBundled() {
         XCTAssertTrue(FileManager.default.fileExists(atPath: repoRoot.appendingPathComponent("SupportFiles/LaunchDaemons/com.swacktools.batterymonitor.helper.plist").path))
     }
+
+    func testRootHelperPersistenceToggleIsVisibleInDetailView() throws {
+        let view = try String(contentsOf: repoRoot.appendingPathComponent("Sources/BatteryMonitor/BatteryDetailView.swift"))
+        let manager = try String(contentsOf: repoRoot.appendingPathComponent("Sources/BatteryMonitor/PrivilegedHelperManager.swift"))
+
+        XCTAssertTrue(view.contains("RootHelperControlSection(info: dataManager.batteryInfo)"))
+        XCTAssertTrue(view.contains("Toggle(PrivilegedHelperControlState.toggleTitle"))
+        XCTAssertTrue(manager.contains("Run as root at startup"))
+    }
 }
