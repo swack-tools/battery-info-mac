@@ -66,6 +66,18 @@ enum SMCReadBytesRequest {
     }
 }
 
+enum SMCOutputSizeValidator {
+    static func validate(_ outputSize: Int) throws {
+        let expected = MemoryLayout<SMCKeyData>.size
+        guard outputSize == expected else {
+            throw SMCProviderError(
+                message: "AppleSMC returned output size \(outputSize), expected \(expected)",
+                code: nil
+            )
+        }
+    }
+}
+
 enum SMCFourCCError: Error, Equatable {
     case requiresFourASCIIBytes
 }
@@ -132,7 +144,13 @@ public enum SMCDecoder {
         guard type.count == 4, type.hasPrefix("fp") || type.hasPrefix("sp") else {
             return nil
         }
-        guard let last = type.last, let fractionalBits = Int(String(last), radix: 16) else {
+        let descriptor = Array(type)
+        guard let integerBits = Int(String(descriptor[2]), radix: 16),
+              let fractionalBits = Int(String(descriptor[3]), radix: 16) else {
+            return nil
+        }
+        let expectedBitCount = type.hasPrefix("sp") ? 15 : 16
+        guard integerBits + fractionalBits == expectedBitCount else {
             return nil
         }
 
@@ -262,8 +280,31 @@ public struct SMCRawRecord: Equatable, Sendable {
     }
 }
 
+public struct SMCRecordBatch: Equatable, Sendable {
+    public var records: [SMCRawRecord]
+    public var attemptedCount: Int
+    public var warnings: [String]
+
+    public init(records: [SMCRawRecord], attemptedCount: Int, warnings: [String] = []) {
+        self.records = records
+        self.attemptedCount = attemptedCount
+        self.warnings = warnings
+    }
+}
+
 public protocol SMCRecordProviding: Sendable {
-    func records() throws -> [SMCRawRecord]
+    func recordBatch() throws -> SMCRecordBatch
+}
+
+enum SMCReadingMappingError: Error, Equatable, CustomStringConvertible {
+    case unsupportedTemperatureEncoding(String)
+
+    var description: String {
+        switch self {
+        case let .unsupportedTemperatureEncoding(type):
+            return "unsupported temperature encoding \(type)"
+        }
+    }
 }
 
 enum SMCReadingMapper {
@@ -272,7 +313,7 @@ enum SMCReadingMapper {
         let classification = SMCSensorClassifier.classify(key: raw.key)
         guard classification.isTemperature else { return nil }
         guard let value = try SMCDecoder.decode(type: raw.dataType, bytes: raw.data) else {
-            return nil
+            throw SMCReadingMappingError.unsupportedTemperatureEncoding(raw.dataType)
         }
 
         var warnings: [String] = []
@@ -295,7 +336,13 @@ enum SMCReadingMapper {
     }
 }
 
+enum SMCProviderErrorKind: Equatable, Sendable {
+    case unavailable
+    case failed
+}
+
 struct SMCProviderError: Error, CustomStringConvertible {
+    var kind: SMCProviderErrorKind = .failed
     var message: String
     var code: kern_return_t?
 
@@ -312,7 +359,7 @@ public struct LiveSMCRecordProvider: SMCRecordProviding {
 
     public init() {}
 
-    public func records() throws -> [SMCRawRecord] {
+    public func recordBatch() throws -> SMCRecordBatch {
         let connection = try openConnection()
         defer { IOServiceClose(connection) }
 
@@ -329,24 +376,35 @@ public struct LiveSMCRecordProvider: SMCRecordProviding {
         }
 
         var records: [SMCRawRecord] = []
+        var warnings: [String] = []
         records.reserveCapacity(Int(keyCount))
         for index in 0..<keyCount {
-            guard let key = try? key(at: index, connection: connection),
-                  let record = try? readKey(key, connection: connection) else {
-                continue
+            do {
+                let key = try key(at: index, connection: connection)
+                do {
+                    records.append(try readKey(key, connection: connection))
+                } catch {
+                    warnings.append("SMC key \(key): \(error)")
+                }
+            } catch {
+                warnings.append("SMC index \(index): \(error)")
             }
-            records.append(record)
         }
-        guard !records.isEmpty else {
-            throw SMCProviderError(message: "SMC exposed no readable keys", code: nil)
-        }
-        return records
+        return SMCRecordBatch(
+            records: records,
+            attemptedCount: Int(keyCount),
+            warnings: warnings
+        )
     }
 
     private func openConnection() throws -> io_connect_t {
         var iterator: io_iterator_t = 0
         guard let matching = IOServiceMatching("AppleSMC") else {
-            throw SMCProviderError(message: "AppleSMC matching dictionary could not be created", code: nil)
+            throw SMCProviderError(
+                kind: .unavailable,
+                message: "AppleSMC matching dictionary could not be created",
+                code: nil
+            )
         }
         let matchingResult = IOServiceGetMatchingServices(kIOMainPortDefault, matching, &iterator)
         guard matchingResult == KERN_SUCCESS else {
@@ -355,14 +413,22 @@ public struct LiveSMCRecordProvider: SMCRecordProviding {
         defer { IOObjectRelease(iterator) }
 
         var fallback: io_connect_t = 0
+        var foundService = false
+        var lastOpenError: kern_return_t?
         while true {
             let service = IOIteratorNext(iterator)
             guard service != 0 else { break }
             defer { IOObjectRelease(service) }
+            foundService = true
 
             var candidate: io_connect_t = 0
             let openResult = IOServiceOpen(service, mach_task_self_, 0, &candidate)
-            guard openResult == KERN_SUCCESS, candidate != 0 else { continue }
+            guard openResult == KERN_SUCCESS, candidate != 0 else {
+                if openResult != KERN_SUCCESS {
+                    lastOpenError = openResult
+                }
+                continue
+            }
 
             if serviceName(service) == "AppleSMCKeysEndpoint" {
                 if fallback != 0 { IOServiceClose(fallback) }
@@ -376,7 +442,17 @@ public struct LiveSMCRecordProvider: SMCRecordProviding {
         }
 
         guard fallback != 0 else {
-            throw SMCProviderError(message: "AppleSMCKeysEndpoint could not be opened", code: nil)
+            if !foundService {
+                throw SMCProviderError(
+                    kind: .unavailable,
+                    message: "AppleSMC service was not found",
+                    code: nil
+                )
+            }
+            throw SMCProviderError(
+                message: "AppleSMCKeysEndpoint could not be opened",
+                code: lastOpenError
+            )
         }
         return fallback
     }
@@ -439,6 +515,7 @@ public struct LiveSMCRecordProvider: SMCRecordProviding {
         guard result == KERN_SUCCESS else {
             throw SMCProviderError(message: "AppleSMC call failed", code: result)
         }
+        try SMCOutputSizeValidator.validate(outputSize)
         guard output.result == 0 else {
             throw SMCProviderError(message: "AppleSMC returned result \(output.result)", code: nil)
         }
@@ -457,10 +534,10 @@ public struct SMCThermalCollector: ThermalCollector {
     public func collect(at timestamp: Date) -> ThermalCollectionResult {
         let start = DispatchTime.now().uptimeNanoseconds
         do {
-            let records = try provider.records()
+            let batch = try provider.recordBatch()
             var readings: [DetailedThermalReading] = []
-            var warnings: [String] = []
-            for record in records {
+            var warnings = batch.warnings
+            for record in batch.records {
                 do {
                     if let reading = try SMCReadingMapper.map(record, timestamp: timestamp) {
                         readings.append(reading)
@@ -474,7 +551,12 @@ public struct SMCThermalCollector: ThermalCollector {
                 readings: readings,
                 durationMilliseconds: elapsedMilliseconds(since: start),
                 warnings: warnings,
-                scannedRecordCount: records.count
+                scannedRecordCount: batch.attemptedCount
+            )
+        } catch let error as SMCProviderError where error.kind == .unavailable {
+            return unavailableResult(
+                durationMilliseconds: elapsedMilliseconds(since: start),
+                error: String(describing: error)
             )
         } catch {
             return .failed(
@@ -488,5 +570,22 @@ public struct SMCThermalCollector: ThermalCollector {
     private func elapsedMilliseconds(since start: UInt64) -> Double {
         let end = DispatchTime.now().uptimeNanoseconds
         return Double(end - start) / 1_000_000
+    }
+
+    private func unavailableResult(
+        durationMilliseconds: Double,
+        error: String
+    ) -> ThermalCollectionResult {
+        ThermalCollectionResult(
+            readings: [],
+            status: ThermalSourceStatus(
+                source: source,
+                state: .unavailable,
+                readingCount: 0,
+                durationMilliseconds: durationMilliseconds,
+                error: error,
+                scannedRecordCount: 0
+            )
+        )
     }
 }

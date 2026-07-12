@@ -49,10 +49,28 @@ final class SMCThermalCollectorTests: XCTestCase {
         }
     }
 
+    func testOutputSizeValidatorRequiresExactSMCKeyDataSize() throws {
+        let expected = MemoryLayout<SMCKeyData>.size
+
+        for outputSize in [0, expected - 1, expected + 1] {
+            XCTAssertThrowsError(
+                try SMCOutputSizeValidator.validate(outputSize),
+                "output size \(outputSize)"
+            )
+        }
+        XCTAssertNoThrow(try SMCOutputSizeValidator.validate(expected))
+    }
+
     func testDecoderHandlesSignedAndUnsignedFixedPoint() throws {
         XCTAssertEqual(try SMCDecoder.decode(type: "sp78", bytes: [0x36, 0x80]), 54.5)
         XCTAssertEqual(try SMCDecoder.decode(type: "sp78", bytes: [0xff, 0x80]), -0.5)
         XCTAssertEqual(try SMCDecoder.decode(type: "fp88", bytes: [0x01, 0x80]), 1.5)
+    }
+
+    func testDecoderRejectsMalformedOrInvalidFixedPointDescriptors() throws {
+        for type in ["spx8", "sp7x", "sp88", "fp78"] {
+            XCTAssertNil(try SMCDecoder.decode(type: type, bytes: [0x01, 0x80]), type)
+        }
     }
 
     func testDecoderHandlesFloatAndIntegerTypes() throws {
@@ -140,6 +158,12 @@ final class SMCThermalCollectorTests: XCTestCase {
         XCTAssertNil(try SMCReadingMapper.map(raw, timestamp: .distantPast))
     }
 
+    func testMapperOmitsUnsupportedNonTemperatureRecordWithoutError() throws {
+        let raw = SMCRawRecord(key: "F0Ac", dataType: "flag", data: [1], status: 0)
+
+        XCTAssertNil(try SMCReadingMapper.map(raw, timestamp: .distantPast))
+    }
+
     func testInjectedProviderCollectsWithoutLiveSMC() {
         let provider = FixtureSMCProvider(records: [
             SMCRawRecord(key: "Tp01", dataType: "sp78", data: [0x36, 0x80], status: 0),
@@ -171,6 +195,44 @@ final class SMCThermalCollectorTests: XCTestCase {
         XCTAssertTrue(result.status.warnings[0].contains("Tg0G"))
     }
 
+    func testInjectedProviderPreservesBatchWarningsAndAttemptedCount() {
+        let provider = FixtureSMCProvider(
+            records: [
+                SMCRawRecord(key: "Tp01", dataType: "sp78", data: [0x36, 0x80], status: 0)
+            ],
+            attemptedCount: 4,
+            warnings: [
+                "SMC index 1: index failure",
+                "SMC key Tg0G: key failure"
+            ]
+        )
+
+        let result = SMCThermalCollector(provider: provider).collect(at: .distantPast)
+
+        XCTAssertEqual(result.readings.map(\.identifier), ["Tp01"])
+        XCTAssertEqual(result.status.state, .partial)
+        XCTAssertEqual(result.status.scannedRecordCount, 4)
+        XCTAssertEqual(result.status.warnings, [
+            "SMC index 1: index failure",
+            "SMC key Tg0G: key failure"
+        ])
+    }
+
+    func testUnsupportedTemperatureEncodingProducesKeyedPartialWarning() {
+        let provider = FixtureSMCProvider(records: [
+            SMCRawRecord(key: "Ts0P", dataType: "flag", data: [1], status: 0)
+        ])
+
+        let result = SMCThermalCollector(provider: provider).collect(at: .distantPast)
+
+        XCTAssertEqual(result.readings, [])
+        XCTAssertEqual(result.status.state, .partial)
+        XCTAssertEqual(result.status.scannedRecordCount, 1)
+        XCTAssertEqual(result.status.warnings, [
+            "Ts0P: unsupported temperature encoding flag"
+        ])
+    }
+
     func testInjectedProviderFailureReturnsFailedStatus() {
         let result = SMCThermalCollector(provider: FailingSMCProvider()).collect(at: .distantPast)
 
@@ -180,6 +242,34 @@ final class SMCThermalCollectorTests: XCTestCase {
         XCTAssertEqual(result.status.readingCount, 0)
         XCTAssertEqual(result.status.scannedRecordCount, 0)
         XCTAssertEqual(result.status.error, "fixture failure")
+    }
+
+    func testTypedProviderUnavailableFailureReturnsUnavailableStatus() {
+        let error = SMCProviderError(
+            kind: .unavailable,
+            message: "AppleSMC service was not found",
+            code: nil
+        )
+
+        let result = SMCThermalCollector(provider: TypedFailingSMCProvider(error: error))
+            .collect(at: .distantPast)
+
+        XCTAssertEqual(result.status.state, .unavailable)
+        XCTAssertEqual(result.status.error, "AppleSMC service was not found")
+    }
+
+    func testTypedProviderKernelFailureReturnsFailedStatus() {
+        let error = SMCProviderError(
+            kind: .failed,
+            message: "AppleSMC call failed",
+            code: Int32(bitPattern: 0xe000_02bc)
+        )
+
+        let result = SMCThermalCollector(provider: TypedFailingSMCProvider(error: error))
+            .collect(at: .distantPast)
+
+        XCTAssertEqual(result.status.state, .failed)
+        XCTAssertTrue(result.status.error?.contains("AppleSMC call failed") == true)
     }
 
     private func assertLayout<T>(
@@ -211,20 +301,36 @@ final class SMCThermalCollectorTests: XCTestCase {
 }
 
 private struct FixtureSMCProvider: SMCRecordProviding {
-    var recordsValue: [SMCRawRecord]
+    var batch: SMCRecordBatch
 
-    init(records: [SMCRawRecord]) {
-        recordsValue = records
+    init(
+        records: [SMCRawRecord],
+        attemptedCount: Int? = nil,
+        warnings: [String] = []
+    ) {
+        batch = SMCRecordBatch(
+            records: records,
+            attemptedCount: attemptedCount ?? records.count,
+            warnings: warnings
+        )
     }
 
-    func records() throws -> [SMCRawRecord] {
-        recordsValue
+    func recordBatch() throws -> SMCRecordBatch {
+        batch
     }
 }
 
 private struct FailingSMCProvider: SMCRecordProviding {
-    func records() throws -> [SMCRawRecord] {
+    func recordBatch() throws -> SMCRecordBatch {
         throw FixtureError.failed
+    }
+}
+
+private struct TypedFailingSMCProvider: SMCRecordProviding {
+    var error: SMCProviderError
+
+    func recordBatch() throws -> SMCRecordBatch {
+        throw error
     }
 }
 
