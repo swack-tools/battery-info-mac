@@ -212,6 +212,54 @@ final class IOKitThermalCollectorTests: XCTestCase {
         XCTAssertTrue(result.status.warnings.contains { $0.contains("plausibility range") })
     }
 
+    func testRegistryCollectorCachesGenericScanForSixtySeconds() {
+        let provider = CountingRegistryProvider(batch: RegistrySnapshotBatch(
+            snapshots: [RegistryServiceSnapshot(
+                name: "unique-thermal",
+                serviceClass: "VendorThermalService",
+                path: "IOService:/Vendor/CPU",
+                properties: ["DieTemp": 66]
+            )],
+            scannedServiceCount: 1,
+            scannedPropertyCount: 1
+        ))
+        let clock = RegistryFixtureClock(now: Date(timeIntervalSince1970: 100))
+        let collector = IORegistryThermalCollector(
+            provider: provider,
+            cacheInterval: 60,
+            now: { clock.now }
+        )
+
+        let first = collector.collect(at: .distantPast)
+        clock.now.addTimeInterval(10)
+        let second = collector.collect(at: .distantPast)
+        clock.now.addTimeInterval(50)
+        let third = collector.collect(at: .distantPast)
+
+        XCTAssertEqual(provider.callCount, 2)
+        XCTAssertEqual(first.readings.first?.numericValue, 66)
+        XCTAssertEqual(second.readings, first.readings)
+        XCTAssertEqual(third.readings, first.readings)
+    }
+
+    func testRegistryProviderSkipsCoveredBatteryServicesButKeepsUniqueThermals() {
+        XCTAssertFalse(LiveRegistrySnapshotProvider.shouldScanService(
+            name: "AppleSmartBattery",
+            serviceClass: "AppleSmartBattery",
+            path: "IOService:/AppleSmartBattery"
+        ))
+        XCTAssertFalse(LiveRegistrySnapshotProvider.shouldScanService(
+            name: "AppleSmartBatteryPack",
+            serviceClass: "AppleSmartBatteryPack",
+            path: "IOService:/AppleSmartBattery/AppleSmartBatteryPack"
+        ))
+        XCTAssertTrue(LiveRegistrySnapshotProvider.shouldScanService(
+            name: "VendorDieSensor",
+            serviceClass: "VendorThermalService",
+            path: "IOService:/Vendor/CPU"
+        ))
+    }
+
     private func value(_ identifier: String, in readings: [DetailedThermalReading]) throws -> Double {
         try XCTUnwrap(readings.first { $0.identifier == identifier }?.numericValue)
     }
@@ -230,4 +278,23 @@ private struct FixtureProcessProvider: ProcessThermalStateProviding {
 private struct FixtureRegistryProvider: RegistrySnapshotProviding {
     var batch: RegistrySnapshotBatch
     func snapshotBatch() throws -> RegistrySnapshotBatch { batch }
+}
+
+private final class CountingRegistryProvider: RegistrySnapshotProviding, @unchecked Sendable {
+    private let batch: RegistrySnapshotBatch
+    private(set) var callCount = 0
+
+    init(batch: RegistrySnapshotBatch) {
+        self.batch = batch
+    }
+
+    func snapshotBatch() throws -> RegistrySnapshotBatch {
+        callCount += 1
+        return batch
+    }
+}
+
+private final class RegistryFixtureClock: @unchecked Sendable {
+    var now: Date
+    init(now: Date) { self.now = now }
 }

@@ -324,17 +324,29 @@ public struct ProcessInfoThermalCollector: ThermalCollector {
     }
 }
 
-public struct RegistryServiceSnapshot: @unchecked Sendable {
+public struct RegistryServiceSnapshot: Sendable {
     public var name: String
     public var serviceClass: String
     public var path: String
-    public var properties: [String: Any]
+    public var flattenedProperties: [String: RegistryPropertyValue]
 
     public init(name: String, serviceClass: String, path: String, properties: [String: Any]) {
         self.name = name
         self.serviceClass = serviceClass
         self.path = path
-        self.properties = properties
+        flattenedProperties = RegistryPropertyFlattener.flatten(properties)
+    }
+
+    init(
+        name: String,
+        serviceClass: String,
+        path: String,
+        flattenedProperties: [String: RegistryPropertyValue]
+    ) {
+        self.name = name
+        self.serviceClass = serviceClass
+        self.path = path
+        self.flattenedProperties = flattenedProperties
     }
 }
 
@@ -392,13 +404,22 @@ public struct LiveRegistrySnapshotProvider: RegistrySnapshotProviding {
         var entry = IOIteratorNext(iterator)
         while entry != IO_OBJECT_NULL {
             serviceCount += 1
+            let name = registryName(entry)
+            let serviceClass = registryClass(entry)
+            let path = registryPath(entry)
+            if !Self.shouldScanService(name: name, serviceClass: serviceClass, path: path) {
+                IOObjectRelease(entry)
+                entry = IOIteratorNext(iterator)
+                continue
+            }
             if let properties = copyRegistryProperties(entry) {
-                propertyCount += RegistryPropertyFlattener.flatten(properties).count
+                let flattened = RegistryPropertyFlattener.flatten(properties)
+                propertyCount += flattened.count
                 snapshots.append(RegistryServiceSnapshot(
-                    name: registryName(entry),
-                    serviceClass: registryClass(entry),
-                    path: registryPath(entry),
-                    properties: properties
+                    name: name,
+                    serviceClass: serviceClass,
+                    path: path,
+                    flattenedProperties: flattened
                 ))
             } else {
                 warnings.append("IORegistry service \(serviceCount): properties unavailable")
@@ -413,21 +434,42 @@ public struct LiveRegistrySnapshotProvider: RegistrySnapshotProviding {
             warnings: warnings
         )
     }
+
+    static func shouldScanService(name: String, serviceClass: String, path: String) -> Bool {
+        let pathLeaf = path.split(separator: "/").last.map(String.init) ?? ""
+        let coveredServices = [
+            "applesmartbattery", "applesmartbatterypack", "applesmartbatterymanager"
+        ]
+        return ![name, serviceClass, pathLeaf]
+            .map { $0.lowercased() }
+            .contains(where: coveredServices.contains)
+    }
 }
 
 public struct IORegistryThermalCollector: ThermalCollector {
     public let source = "ioRegistry"
     private let provider: any RegistrySnapshotProviding
+    private let cacheInterval: TimeInterval
+    private let now: @Sendable () -> Date
+    private let cache = RegistrySnapshotCache()
 
-    public init(provider: any RegistrySnapshotProviding = LiveRegistrySnapshotProvider()) {
+    public init(
+        provider: any RegistrySnapshotProviding = LiveRegistrySnapshotProvider(),
+        cacheInterval: TimeInterval = 60,
+        now: @escaping @Sendable () -> Date = { Date() }
+    ) {
         self.provider = provider
+        self.cacheInterval = max(0, cacheInterval)
+        self.now = now
     }
 
     public func collect(at timestamp: Date) -> ThermalCollectionResult {
         _ = timestamp
         let start = DispatchTime.now().uptimeNanoseconds
         do {
-            let batch = try provider.snapshotBatch()
+            let batch = try cache.value(at: now(), maxAge: cacheInterval) {
+                try provider.snapshotBatch()
+            }
             let readings = Self.map(snapshots: batch.snapshots)
             var diagnostics = batch.warnings
             diagnostics.append(
@@ -457,7 +499,7 @@ public struct IORegistryThermalCollector: ThermalCollector {
 
     public static func map(snapshots: [RegistryServiceSnapshot]) -> [DetailedThermalReading] {
         snapshots.flatMap { snapshot in
-            RegistryPropertyFlattener.flatten(snapshot.properties)
+            snapshot.flattenedProperties
                 .sorted { $0.key < $1.key }
                 .compactMap { propertyPath, value in
                     map(snapshot: snapshot, propertyPath: propertyPath, value: value)
@@ -557,6 +599,29 @@ public struct IORegistryThermalCollector: ThermalCollector {
         if text.contains("memory") || text.contains("dram") { return .memory }
         if text.contains("enclosure") || text.contains("chassis") || text.contains("skin") { return .enclosure }
         return .system
+    }
+}
+
+private final class RegistrySnapshotCache: @unchecked Sendable {
+    private let lock = NSLock()
+    private var entry: (timestamp: Date, batch: RegistrySnapshotBatch)?
+
+    func value(
+        at timestamp: Date,
+        maxAge: TimeInterval,
+        load: () throws -> RegistrySnapshotBatch
+    ) rethrows -> RegistrySnapshotBatch {
+        lock.lock()
+        defer { lock.unlock() }
+        if maxAge > 0, let entry {
+            let age = timestamp.timeIntervalSince(entry.timestamp)
+            if age >= 0, age < maxAge {
+                return entry.batch
+            }
+        }
+        let batch = try load()
+        entry = (timestamp, batch)
+        return batch
     }
 }
 
