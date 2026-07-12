@@ -218,6 +218,25 @@ final class SMCThermalCollectorTests: XCTestCase {
         ])
     }
 
+    func testSuccessfulReadingWithLargeWarningBatchIsCentrallyBounded() {
+        let warnings = (0..<181).map { "SMC index \($0): index failure" }
+        let provider = FixtureSMCProvider(
+            records: [
+                SMCRawRecord(key: "Tp01", dataType: "sp78", data: [0x36, 0x80], status: 0)
+            ],
+            attemptedCount: 182,
+            warnings: warnings
+        )
+
+        let result = SMCThermalCollector(provider: provider).collect(at: .distantPast)
+
+        XCTAssertEqual(result.readings.map(\.identifier), ["Tp01"])
+        XCTAssertEqual(result.status.state, .partial)
+        XCTAssertEqual(result.status.warnings.count, ThermalCollectionResult.maximumWarningCount)
+        XCTAssertEqual(result.status.warnings.first, "SMC index 0: index failure")
+        XCTAssertEqual(result.status.warnings.last, "162 additional warnings omitted")
+    }
+
     func testInjectedProviderWithNoReadableRecordsReturnsBoundedFailedStatus() {
         let warnings = (0..<25).map { "SMC index \($0): index failure" }
         let provider = FixtureSMCProvider(

@@ -114,66 +114,30 @@ public struct ThermalCaptureCoordinator: Sendable {
         }
 
         let detailedReadings = results.flatMap(\.readings)
-        var throttling = ThrottlingStatus.nominal(source: "coordinator")
-        for candidate in results.compactMap(\.throttling)
-        where candidate.percentage > throttling.percentage
-            || throttling.source == "coordinator" {
-            throttling = candidate
-        }
-        var pressureCandidates: [PressureCandidate] = []
+        var thermalStatus: ThermalStatusCandidate?
         for result in results {
-            if let pressure = result.thermalPressure {
-                pressureCandidates.append(PressureCandidate(
-                    text: pressure,
-                    source: result.status.source
-                ))
-            }
-            pressureCandidates.append(contentsOf: result.readings.compactMap { reading in
-                guard reading.kind == .thermalPressure, let text = reading.textValue else {
-                    return nil
+            guard let candidate = thermalStatusCandidate(for: result) else { continue }
+            if let current = thermalStatus {
+                let candidateRank = pressureRank(candidate.level)
+                let currentRank = pressureRank(current.level)
+                if candidateRank > currentRank
+                    || (candidateRank == currentRank && candidate.percentage > current.percentage) {
+                    thermalStatus = candidate
                 }
-                return PressureCandidate(text: text, source: reading.source)
-            })
-        }
-        if throttling.percentage > 0 || pressureRank(throttling.level) > 0 {
-            pressureCandidates.append(PressureCandidate(
-                text: throttling.level,
-                source: throttling.source
-            ))
-        }
-        var strongestPressure: PressureCandidate?
-        for candidate in pressureCandidates
-        where strongestPressure == nil
-            || pressureRank(candidate.text) > pressureRank(strongestPressure?.text ?? "") {
-            strongestPressure = candidate
-        }
-        if let strongestPressure {
-            let selectedRank = pressureRank(strongestPressure.text)
-            let throttleRank = pressureRank(throttling.level)
-            if selectedRank > throttleRank {
-                throttling = ThrottlingStatus(
-                    level: normalizedPressure(strongestPressure.text),
-                    percentage: max(
-                        throttling.percentage,
-                        defaultPercentage(forPressure: strongestPressure.text)
-                    ),
-                    source: strongestPressure.source
-                )
-            } else if selectedRank == throttleRank, selectedRank > 0 {
-                throttling = ThrottlingStatus(
-                    level: normalizedPressure(strongestPressure.text),
-                    percentage: throttling.percentage,
-                    source: throttling.source
-                )
+            } else {
+                thermalStatus = candidate
             }
         }
+        let throttling = thermalStatus.map {
+            ThrottlingStatus(level: $0.level, percentage: $0.percentage, source: $0.source)
+        } ?? .nominal(source: "coordinator")
 
         return ThermalSnapshot(
             generatedAt: generatedAt,
             thermalReadings: ThermalSummaryBuilder.build(from: detailedReadings),
             componentPowers: deduplicatedComponentPowers(results.flatMap(\.componentPowers)),
             throttling: throttling,
-            thermalPressure: strongestPressure.map { normalizedPressure($0.text) },
+            thermalPressure: thermalStatus?.level,
             messages: boundedMessages(from: results.map(\.status)),
             detailedReadings: detailedReadings,
             sourceStatuses: results.map(\.status)
@@ -245,13 +209,65 @@ public struct ThermalCaptureCoordinator: Sendable {
         }
     }
 
-    private struct PressureCandidate {
-        var text: String
+    private func thermalStatusCandidate(
+        for result: ThermalCollectionResult
+    ) -> ThermalStatusCandidate? {
+        var explicit: ThermalStatusCandidate?
+        if let pressure = result.thermalPressure {
+            explicit = ThermalStatusCandidate(
+                level: normalizedPressure(pressure),
+                percentage: defaultPercentage(forPressure: pressure),
+                source: result.status.source
+            )
+        }
+        for reading in result.readings
+        where reading.kind == .thermalPressure && reading.textValue != nil {
+            let text = reading.textValue ?? ""
+            let candidate = ThermalStatusCandidate(
+                level: normalizedPressure(text),
+                percentage: defaultPercentage(forPressure: text),
+                source: reading.source
+            )
+            if explicit == nil || pressureRank(candidate.level) > pressureRank(explicit?.level ?? "") {
+                explicit = candidate
+            }
+        }
+
+        guard let throttle = result.throttling else { return explicit }
+        let throttleCandidate = ThermalStatusCandidate(
+            level: normalizedPressure(throttle.level),
+            percentage: throttle.percentage,
+            source: throttle.source
+        )
+        guard let explicit else { return throttleCandidate }
+        let explicitRank = pressureRank(explicit.level)
+        let throttleRank = pressureRank(throttleCandidate.level)
+        if explicitRank < throttleRank { return throttleCandidate }
+        if explicitRank > throttleRank {
+            return ThermalStatusCandidate(
+                level: explicit.level,
+                percentage: max(explicit.percentage, throttleCandidate.percentage),
+                source: explicit.source
+            )
+        }
+        return ThermalStatusCandidate(
+            level: explicit.level,
+            percentage: throttleCandidate.percentage > 0
+                ? throttleCandidate.percentage
+                : explicit.percentage,
+            source: explicit.source
+        )
+    }
+
+    private struct ThermalStatusCandidate {
+        var level: String
+        var percentage: Int
         var source: String
     }
 }
 
 public struct ThermalCollectionResult: Sendable {
+    public static let maximumWarningCount = 20
     public var readings: [DetailedThermalReading]
     public var status: ThermalSourceStatus
     public var componentPowers: [ComponentPowerReading]
@@ -266,10 +282,20 @@ public struct ThermalCollectionResult: Sendable {
         thermalPressure: String? = nil
     ) {
         self.readings = readings
-        self.status = status
+        var normalizedStatus = status
+        normalizedStatus.warnings = Self.boundedWarnings(status.warnings)
+        self.status = normalizedStatus
         self.componentPowers = componentPowers
         self.throttling = throttling
         self.thermalPressure = thermalPressure
+    }
+
+    public static func boundedWarnings(_ warnings: [String]) -> [String] {
+        guard warnings.count > maximumWarningCount else { return warnings }
+        let retained = maximumWarningCount - 1
+        return Array(warnings.prefix(retained)) + [
+            "\(warnings.count - retained) additional warnings omitted"
+        ]
     }
 
     public static func completed(

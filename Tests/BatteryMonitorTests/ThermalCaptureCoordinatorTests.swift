@@ -67,7 +67,7 @@ final class ThermalCaptureCoordinatorTests: XCTestCase {
         XCTAssertEqual(snapshot.componentPowers.map(\.watts), [5, 2])
         XCTAssertEqual(snapshot.componentPowers.map(\.source), ["second", "second"])
         XCTAssertEqual(snapshot.throttling.percentage, 90)
-        XCTAssertEqual(snapshot.throttling.source, "third")
+        XCTAssertEqual(snapshot.throttling.source, "pmset")
         XCTAssertEqual(snapshot.thermalPressure, "Critical")
     }
 
@@ -152,6 +152,64 @@ final class ThermalCaptureCoordinatorTests: XCTestCase {
         XCTAssertEqual(snapshot.throttling.level, "Fair")
         XCTAssertEqual(snapshot.throttling.percentage, 30)
         XCTAssertEqual(snapshot.throttling.source, "processInfo")
+    }
+
+    func testEqualRankPressureAndThrottleKeepOneCandidateProvenance() {
+        let critical = FixtureThermalCollector(source: "processInfo", result: result(
+            source: "processInfo",
+            readings: [DetailedThermalReading(
+                source: "processInfo",
+                identifier: "thermalState",
+                label: "System thermal state",
+                category: .system,
+                kind: .thermalPressure,
+                textValue: "critical",
+                classification: .known
+            )],
+            pressure: "Critical"
+        ))
+        let heavy = FixtureThermalCollector(source: "pmset", result: result(
+            source: "pmset",
+            readings: [],
+            throttling: ThrottlingStatus(level: "Heavy", percentage: 90, source: "pmset")
+        ))
+
+        let snapshot = ThermalCaptureCoordinator(collectors: [critical, heavy]).collect()
+
+        XCTAssertEqual(snapshot.thermalPressure, "Critical")
+        XCTAssertEqual(snapshot.throttling.level, "Critical")
+        XCTAssertEqual(snapshot.throttling.percentage, 90)
+        XCTAssertEqual(snapshot.throttling.source, "processInfo")
+    }
+
+    func testSourceWarningsAndEncodedDiagnosticsAreCentrallyBounded() throws {
+        let warnings = (0..<181).map { "warning-\($0)" }
+        let collector = FixtureThermalCollector(
+            source: "smc",
+            result: ThermalCollectionResult(
+                readings: [],
+                status: ThermalSourceStatus(
+                    source: "smc",
+                    state: .partial,
+                    readingCount: 0,
+                    durationMilliseconds: 1,
+                    warnings: warnings
+                )
+            )
+        )
+
+        let snapshot = ThermalCaptureCoordinator(collectors: [collector]).collect()
+        let data = try JSONEncoder().encode(snapshot)
+        let json = try XCTUnwrap(String(data: data, encoding: .utf8))
+
+        XCTAssertEqual(snapshot.sourceStatuses.first?.warnings.count, 20)
+        XCTAssertEqual(
+            snapshot.sourceStatuses.first?.warnings.last,
+            "162 additional warnings omitted"
+        )
+        XCTAssertLessThanOrEqual(snapshot.messages.count, 20)
+        XCTAssertFalse(json.contains("warning-180"))
+        XCTAssertLessThan(data.count, 20_000)
     }
 
     func testDefaultCollectorOrderIsStable() {
