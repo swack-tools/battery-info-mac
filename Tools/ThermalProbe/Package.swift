@@ -4,6 +4,9 @@ import PackageDescription
 let package = Package(
     name: "ThermalProbe",
     platforms: [.macOS(.v13)],
+    products: [
+        .executable(name: "thermal-probe", targets: ["ThermalProbe"])
+    ],
     targets: [
         .target(
             name: "CThermalProbeShim",
@@ -21,6 +24,7 @@ let package = Package(
                 .linkedFramework("CoreFoundation")
             ]
         ),
+        .executableTarget(name: "ThermalProbe", dependencies: ["ThermalProbeCore"]),
         .testTarget(name: "ThermalProbeCoreTests", dependencies: ["ThermalProbeCore"])
     ],
     swiftLanguageVersions: [.v5]
