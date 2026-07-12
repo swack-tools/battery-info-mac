@@ -173,10 +173,83 @@ struct BatteryDisplayInfo {
 
     // General Thermals
     var thermalReadings: [ThermalReading] = []
+    var detailedThermalReadings: [DetailedThermalReading] = []
+    var thermalSourceStatuses: [ThermalSourceStatus] = []
     var componentPowers: [ComponentPowerReading] = []
     var throttlingStatus: ThrottlingStatus? = nil
     var privilegedTelemetryStatus: String = "Not registered"
     var privilegedHelperRegistration: PrivilegedHelperRegistration = .notRegistered
+
+    static func localThermalTelemetry(
+        from battery: BatteryData
+    ) -> (summary: [ThermalReading], detailed: [DetailedThermalReading]) {
+        var summary: [ThermalReading] = []
+        var detailed: [DetailedThermalReading] = []
+
+        func append(
+            identifier: String,
+            label: String,
+            celsius: Double?,
+            includeInSummary: Bool = false
+        ) {
+            guard let celsius, celsius > 0 else { return }
+            if includeInSummary {
+                summary.append(ThermalReading(name: label, celsius: celsius, source: "IOKit"))
+            }
+            detailed.append(.temperature(
+                source: "iokitLocal",
+                identifier: identifier,
+                label: label,
+                category: .battery,
+                celsius: celsius,
+                classification: .known
+            ))
+        }
+
+        append(
+            identifier: "battery.temperature",
+            label: "Battery",
+            celsius: battery.temperature,
+            includeInSummary: true
+        )
+        append(
+            identifier: "battery.virtualTemperature",
+            label: "Battery Virtual",
+            celsius: battery.virtualTemperature
+        )
+        append(
+            identifier: "battery.lifetime.minimumTemperature",
+            label: "Battery Lifetime Min",
+            celsius: battery.minimumTemperature
+        )
+        append(
+            identifier: "battery.lifetime.averageTemperature",
+            label: "Battery Lifetime Average",
+            celsius: battery.averageTemperature
+        )
+        append(
+            identifier: "battery.lifetime.maximumTemperature",
+            label: "Battery Lifetime Max",
+            celsius: battery.maximumTemperature
+        )
+        return (summary, detailed)
+    }
+
+    mutating func applyPrivilegedThermalSnapshot(_ snapshot: ThermalSnapshot) {
+        if !snapshot.thermalReadings.isEmpty {
+            var names = Set<String>()
+            thermalReadings = (snapshot.thermalReadings + thermalReadings).filter { reading in
+                names.insert(reading.name.lowercased()).inserted
+            }
+        }
+        if !snapshot.detailedReadings.isEmpty {
+            detailedThermalReadings = snapshot.detailedReadings
+        }
+        thermalSourceStatuses = snapshot.sourceStatuses
+        componentPowers = snapshot.componentPowers
+        throttlingStatus = snapshot.throttling
+        thermalPressure = snapshot.thermalPressure ?? snapshot.throttling.level
+    }
 
     /// Fetch current battery information from IOKit
     static func fetch() -> BatteryDisplayInfo {
@@ -662,45 +735,9 @@ struct BatteryDisplayInfo {
         }
 
         // ========== POWER BREAKDOWN ==========
-        if batteryData.temperature > 0 {
-            info.thermalReadings.append(ThermalReading(
-                name: "Battery",
-                celsius: batteryData.temperature,
-                source: "IOKit"
-            ))
-        }
-
-        if let virtualTemperature = batteryData.virtualTemperature, virtualTemperature > 0 {
-            info.thermalReadings.append(ThermalReading(
-                name: "Battery Virtual",
-                celsius: virtualTemperature,
-                source: "IOKit"
-            ))
-        }
-
-        if let maxTemp = batteryData.maximumTemperature {
-            info.thermalReadings.append(ThermalReading(
-                name: "Battery Lifetime Max",
-                celsius: maxTemp,
-                source: "IOKit LifetimeData"
-            ))
-        }
-
-        if let avgTemp = batteryData.averageTemperature {
-            info.thermalReadings.append(ThermalReading(
-                name: "Battery Lifetime Average",
-                celsius: avgTemp,
-                source: "IOKit LifetimeData"
-            ))
-        }
-
-        if let minTemp = batteryData.minimumTemperature {
-            info.thermalReadings.append(ThermalReading(
-                name: "Battery Lifetime Min",
-                celsius: minTemp,
-                source: "IOKit LifetimeData"
-            ))
-        }
+        let localThermals = localThermalTelemetry(from: batteryData)
+        info.thermalReadings = localThermals.summary
+        info.detailedThermalReadings = localThermals.detailed
 
         if let thermalStatus = SystemCommands.getThermalStatus() {
             info.throttlingStatus = thermalStatus
@@ -712,10 +749,7 @@ struct BatteryDisplayInfo {
         if let cached = PrivilegedHelperManager.cachedTelemetry() {
             let snapshot = cached.snapshot
             info.privilegedTelemetryStatus = "Active, updated \(PrivilegedHelperManager.ageDescription(cached.age))"
-            info.componentPowers = snapshot.componentPowers
-            info.thermalReadings.append(contentsOf: snapshot.thermalReadings)
-            info.throttlingStatus = snapshot.throttling
-            info.thermalPressure = snapshot.thermalPressure ?? snapshot.throttling.level
+            info.applyPrivilegedThermalSnapshot(snapshot)
             info.hasPowerMetrics = !snapshot.componentPowers.isEmpty
 
             let cpuPower = snapshot.componentPowers.first { $0.name == "CPU" }?.watts ?? 0

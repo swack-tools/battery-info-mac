@@ -196,6 +196,9 @@ struct BatteryDetailView: View {
                 // General Thermals
                 GeneralThermalsSection(info: dataManager.batteryInfo)
 
+                // Advanced Thermals
+                ThermalsAdvancedSection(info: dataManager.batteryInfo)
+
                 // Power Breakdown
                 if dataManager.batteryInfo.hasPowerMetrics {
                     PowerBreakdownSection(info: dataManager.batteryInfo)
@@ -1315,7 +1318,7 @@ struct GeneralThermalsSection: View {
             VStack(alignment: .leading, spacing: 10) {
                 if !info.thermalReadings.isEmpty {
                     VStack(alignment: .leading, spacing: 6) {
-                        ForEach(info.thermalReadings, id: \.name) { reading in
+                        ForEach(Array(info.thermalReadings.enumerated()), id: \.offset) { _, reading in
                             InfoRow(
                                 label: reading.name,
                                 value: String(format: "%.1f C", reading.celsius),
@@ -1350,7 +1353,7 @@ struct GeneralThermalsSection: View {
                     }
                 }
 
-                if info.componentPowers.isEmpty {
+                if !hasPrivilegedComponentTemperature {
                     Divider()
                     InfoRow(label: "Privileged Telemetry", value: info.privilegedTelemetryStatus, valueColor: .secondary)
                 }
@@ -1365,6 +1368,13 @@ struct GeneralThermalsSection: View {
                     .font(.sectionHeader)
                     .tracking(0.3)
             }
+        }
+    }
+
+    private var hasPrivilegedComponentTemperature: Bool {
+        info.thermalReadings.contains { reading in
+            !reading.name.lowercased().contains("battery")
+                && reading.source.lowercased() != "iokit"
         }
     }
 
@@ -1389,6 +1399,200 @@ struct GeneralThermalsSection: View {
         if status.percentage > 0 || status.level.lowercased().contains("light") {
             return .yellow
         }
+        return .green
+    }
+}
+
+// MARK: - Advanced Thermals Section
+struct ThermalsAdvancedSection: View {
+    let info: BatteryDisplayInfo
+
+    private var groups: [ThermalSourceDisplayGroup] {
+        var statuses: [String: ThermalSourceStatus] = [:]
+        var order: [String] = []
+        for status in info.thermalSourceStatuses {
+            if statuses[status.source] == nil {
+                order.append(status.source)
+            }
+            statuses[status.source] = status
+        }
+        for reading in info.detailedThermalReadings where !order.contains(reading.source) {
+            order.append(reading.source)
+        }
+        return order.map { source in
+            ThermalSourceDisplayGroup(
+                source: source,
+                status: statuses[source],
+                readings: info.detailedThermalReadings.filter { $0.source == source }
+            )
+        }
+    }
+
+    var body: some View {
+        DisclosureGroup {
+            LazyVStack(alignment: .leading, spacing: 10) {
+                if groups.isEmpty {
+                    InfoRow(
+                        label: "Privileged Telemetry",
+                        value: info.privilegedTelemetryStatus,
+                        valueColor: .secondary
+                    )
+                } else {
+                    ForEach(groups) { group in
+                        ThermalSourceGroupView(group: group)
+                    }
+                }
+            }
+            .padding(.top, 8)
+        } label: {
+            HStack {
+                Image(systemName: "thermometer.high")
+                    .foregroundColor(.orange)
+                    .font(.system(size: sectionHeaderFontSize))
+                Text("Thermals Advanced")
+                    .font(.sectionHeader)
+                    .tracking(0.3)
+            }
+        }
+    }
+}
+
+private struct ThermalSourceDisplayGroup: Identifiable {
+    let source: String
+    let status: ThermalSourceStatus?
+    let readings: [DetailedThermalReading]
+
+    var id: String { source }
+}
+
+private struct ThermalSourceGroupView: View {
+    let group: ThermalSourceDisplayGroup
+    @State private var isExpanded = false
+
+    var body: some View {
+        DisclosureGroup(isExpanded: $isExpanded) {
+            VStack(alignment: .leading, spacing: 8) {
+                if let error = group.status?.error, !error.isEmpty {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundColor(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                ForEach(Array((group.status?.warnings ?? []).prefix(3).enumerated()), id: \.offset) { _, warning in
+                    Text(warning)
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if group.readings.isEmpty {
+                    Text("No thermal readings")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                } else {
+                    ForEach(Array(group.readings.enumerated()), id: \.offset) { _, reading in
+                        ThermalAdvancedReadingRow(reading: reading)
+                    }
+                }
+            }
+            .padding(.top, 6)
+            .padding(.leading, 4)
+        } label: {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(statusColor)
+                    .frame(width: 7, height: 7)
+                Text(sourceTitle)
+                    .font(.infoValue)
+                Spacer()
+                Text(statusText)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+
+    private var sourceTitle: String {
+        switch group.source.lowercased() {
+        case "smc": return "AppleSMC"
+        case "iohid": return "IOHID"
+        case "ioreport": return "IOReport"
+        case "applesmartbattery": return "AppleSmartBattery"
+        case "processinfo": return "Process Info"
+        case "powermetrics": return "powermetrics"
+        case "pmset": return "pmset"
+        case "ioregistry": return "IORegistry"
+        case "iokitlocal": return "Local IOKit"
+        default: return group.source
+        }
+    }
+
+    private var statusText: String {
+        guard let status = group.status else { return "\(group.readings.count)" }
+        return "\(status.state.rawValue.capitalized) · \(status.readingCount)"
+    }
+
+    private var statusColor: Color {
+        switch group.status?.state {
+        case .success: return .green
+        case .partial: return .orange
+        case .unavailable: return .secondary
+        case .failed: return .red
+        case nil: return .green
+        }
+    }
+}
+
+private struct ThermalAdvancedReadingRow: View {
+    let reading: DetailedThermalReading
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(reading.label)
+                    .font(.infoLabel)
+                    .foregroundColor(.primary)
+                Spacer(minLength: 12)
+                Text(valueText)
+                    .font(.infoValue)
+                    .foregroundColor(valueColor)
+            }
+            Text(reading.identifier)
+                .font(.system(size: 10, weight: .regular, design: .monospaced))
+                .foregroundColor(.secondary)
+                .lineLimit(2)
+            Text(reading.classification.rawValue.capitalized)
+                .font(.caption2)
+                .foregroundColor(.secondary)
+            ForEach(Array(reading.warnings.prefix(2).enumerated()), id: \.offset) { _, warning in
+                Text(warning)
+                    .font(.caption2)
+                    .foregroundColor(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.vertical, 3)
+    }
+
+    private var valueText: String {
+        if let number = reading.numericValue {
+            return reading.unit == "C"
+                ? String(format: "%.1f C", number)
+                : String(format: "%.2f%@", number, reading.unit.map { " \($0)" } ?? "")
+        }
+        return reading.textValue?.capitalized ?? "Unknown"
+    }
+
+    private var valueColor: Color {
+        if reading.kind == .temperature, let celsius = reading.numericValue {
+            switch ThermalBand.band(for: celsius, component: reading.label) {
+            case .green: return .green
+            case .orange: return .orange
+            case .red: return .red
+            }
+        }
+        let pressure = reading.textValue?.lowercased() ?? ""
+        if pressure.contains("critical") || pressure.contains("heavy") { return .red }
+        if pressure.contains("serious") || pressure.contains("moderate") { return .orange }
         return .green
     }
 }

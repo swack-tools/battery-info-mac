@@ -21,10 +21,13 @@ and thermal diagnostics.
   nested `AppleSmartBatteryPack/BatteryData` layouts seen on macOS 26 and 27.
 - USB-C Power Delivery diagnostics, charger capabilities, active contract data,
   adapter input power, and port controller details.
-- General Thermals section with battery temperatures, system thermal pressure,
-  component power telemetry, and a throttling percentage.
-- Optional root LaunchDaemon helper for privileged `powermetrics` data without
-  running the menu bar UI as root.
+- General Thermals summary for current CPU, GPU, battery, memory, storage, PMU,
+  enclosure, and system temperatures when exposed by the host.
+- Thermals Advanced source groups with every collected temperature, pressure,
+  source status, sensor identifier, classification, warning, and error.
+- Optional root LaunchDaemon helper with native Swift AppleSMC, IOHID,
+  IOReport, AppleSmartBattery, IORegistry, `powermetrics`, and `pmset`
+  collectors without running the menu bar UI as root.
 - Signed and notarized DMG releases.
 
 ## Requirements
@@ -91,11 +94,19 @@ unregisters a separate root LaunchDaemon that writes sanitized telemetry JSON to
 
 Battery Monitor collects thermal data from:
 
-- IOKit battery data: current, virtual, lifetime minimum, lifetime average, and
-  lifetime maximum battery temperatures when exposed by macOS.
-- `pmset -g therm`: non-root thermal, performance, and CPU power warning state.
-- Root helper `powermetrics`: CPU/GPU/ANE/DRAM power, thermal pressure, SFI
-  forced idle percentages, and supported CPU power-limit percentages.
+- AppleSMC: decoded CPU, GPU, battery, and memory temperature keys.
+- IOHID: Apple Silicon temperature events for battery, PMU, NAND/storage,
+  enclosure, CPU, GPU, and other labeled sensors.
+- IOReport: genuine Celsius thermal channels with source scan diagnostics.
+- AppleSmartBattery and IOKit: current, virtual, and lifetime battery
+  temperatures plus conservative registry thermal fallbacks.
+- `ProcessInfo`, `pmset -g therm`, and root `powermetrics`: system pressure,
+  throttling, forced idle, power limits, and CPU/GPU/ANE/DRAM component power.
+
+General Thermals chooses one representative current value per component and
+excludes lifetime aggregates. Thermals Advanced retains all valid readings and
+reports each source independently, so an unavailable private API does not hide
+data from other collectors.
 
 Temperature bands:
 
