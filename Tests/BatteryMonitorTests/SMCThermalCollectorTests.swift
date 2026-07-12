@@ -135,6 +135,28 @@ final class SMCThermalCollectorTests: XCTestCase {
         XCTAssertEqual(reading?.warnings, [])
     }
 
+    func testMapperOmitsConfirmedUnreliableTVDiKey() throws {
+        let raw = SMCRawRecord(
+            key: "TVDi",
+            dataType: "ui32",
+            data: [0x0d, 0x00, 0x00, 0x00],
+            status: 0
+        )
+
+        XCTAssertNil(try SMCReadingMapper.map(raw, timestamp: .distantPast))
+    }
+
+    func testMapperPreservesNeighboringHeuristicTemperatureKey() throws {
+        let raw = SMCRawRecord(
+            key: "TVDj",
+            dataType: "sp78",
+            data: [0x32, 0x00],
+            status: 0
+        )
+
+        XCTAssertNotNil(try SMCReadingMapper.map(raw, timestamp: .distantPast))
+    }
+
     func testMapperWarnsForImplausibleTemperatureAndSMCStatus() throws {
         let raw = SMCRawRecord(
             key: "Tp01",

@@ -76,7 +76,14 @@ enum HIDSensorClassifier {
 }
 
 enum HIDReadingMapper {
-    static func map(_ raw: HIDRawRecord) throws -> DetailedThermalReading {
+    private static let excludedProducts: Set<String> = [
+        "pmu tdev1",
+        "pmu2 tdev1",
+        "pmu2 tdev3"
+    ]
+
+    static func map(_ raw: HIDRawRecord) throws -> DetailedThermalReading? {
+        guard !isExcluded(raw) else { return nil }
         guard raw.celsius.isFinite else { throw HIDReadingMappingError.nonFiniteTemperature }
 
         let category = HIDSensorClassifier.category(for: raw.product)
@@ -115,6 +122,13 @@ enum HIDReadingMapper {
             classification: category == .system ? .unclassified : .heuristic,
             warnings: warnings
         )
+    }
+
+    static func isExcluded(_ raw: HIDRawRecord) -> Bool {
+        let normalizedProduct = raw.product
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        return excludedProducts.contains(normalizedProduct)
     }
 
     private static func slug(_ value: String) -> String {
@@ -274,9 +288,13 @@ public struct HIDThermalCollector: ThermalCollector {
             let batch = try provider.recordBatch()
             var readings: [DetailedThermalReading] = []
             var warnings = batch.warnings
+            var excludedCount = 0
             for record in batch.records {
                 do {
-                    let reading = try HIDReadingMapper.map(record)
+                    guard let reading = try HIDReadingMapper.map(record) else {
+                        excludedCount += 1
+                        continue
+                    }
                     readings.append(reading)
                     warnings.append(contentsOf: reading.warnings.map { "IOHID service \(record.index): \($0)" })
                 } catch HIDReadingMappingError.nonFiniteTemperature {
@@ -287,7 +305,9 @@ public struct HIDThermalCollector: ThermalCollector {
             }
 
             let boundedWarnings = bounded(warnings)
-            if readings.isEmpty, batch.attemptedCount > 0 {
+            let allReturnedRecordsWereExcluded = !batch.records.isEmpty
+                && excludedCount == batch.records.count
+            if readings.isEmpty, batch.attemptedCount > 0, !allReturnedRecordsWereExcluded {
                 return failedEmptyBatch(batch: batch, warnings: boundedWarnings, start: start)
             }
             return .completed(
