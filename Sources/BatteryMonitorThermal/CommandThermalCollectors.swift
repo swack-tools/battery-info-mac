@@ -32,8 +32,8 @@ public struct CommandResult: Equatable, Sendable {
         self.durationMilliseconds = durationMilliseconds
     }
 
-    public var stdoutString: String { String(decoding: stdout, as: UTF8.self) }
-    public var stderrString: String { String(decoding: stderr, as: UTF8.self) }
+    public var stdoutString: String { String(bytes: stdout, encoding: .utf8) ?? "" }
+    public var stderrString: String { String(bytes: stderr, encoding: .utf8) ?? "" }
 }
 
 public protocol CommandRunning: Sendable {
@@ -59,38 +59,51 @@ public final class ProcessCommandRunner: CommandRunning, @unchecked Sendable {
         let stdoutPipe = Pipe()
         let stderrPipe = Pipe()
         let output = BoundedCommandOutput(maximumBytes: maximumBytes)
-        let readers = DispatchGroup()
         let exited = DispatchSemaphore(value: 0)
+        let deadline = DispatchTime.now() + max(0, timeout)
 
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
         process.terminationHandler = { _ in exited.signal() }
+        let stdoutDrain = CommandPipeDrain(
+            handle: stdoutPipe.fileHandleForReading,
+            stream: .stdout,
+            output: output
+        )
+        let stderrDrain = CommandPipeDrain(
+            handle: stderrPipe.fileHandleForReading,
+            stream: .stderr,
+            output: output
+        )
 
         try process.run()
-        drain(stdoutPipe.fileHandleForReading, stream: .stdout, output: output, group: readers)
-        drain(stderrPipe.fileHandleForReading, stream: .stderr, output: output, group: readers)
         stdoutPipe.fileHandleForWriting.closeFile()
         stderrPipe.fileHandleForWriting.closeFile()
 
         var timedOut = false
-        if exited.wait(timeout: .now() + max(0, timeout)) == .timedOut {
+        if exited.wait(timeout: deadline) == .timedOut {
             timedOut = true
+            stdoutDrain.stop()
+            stderrDrain.stop()
             process.terminate()
-            if exited.wait(timeout: .now() + 0.5) == .timedOut {
+            if exited.wait(timeout: .now() + 0.05) == .timedOut {
                 Darwin.kill(process.processIdentifier, SIGKILL)
-                _ = exited.wait(timeout: .now() + 2)
+                _ = exited.wait(timeout: .now() + 0.1)
             }
         }
-        process.waitUntilExit()
-        readers.wait()
+        if !stdoutDrain.wait(until: deadline) || !stderrDrain.wait(until: deadline) {
+            timedOut = true
+            stdoutDrain.stop()
+            stderrDrain.stop()
+        }
 
         let captured = output.snapshot()
         return CommandResult(
             executable: executable,
             arguments: arguments,
-            terminationStatus: process.terminationStatus,
+            terminationStatus: process.isRunning ? -1 : process.terminationStatus,
             stdout: captured.stdout,
             stderr: captured.stderr,
             timedOut: timedOut,
@@ -99,21 +112,51 @@ public final class ProcessCommandRunner: CommandRunning, @unchecked Sendable {
         )
     }
 
-    private func drain(
-        _ handle: FileHandle,
+}
+
+private final class CommandPipeDrain: @unchecked Sendable {
+    private let handle: FileHandle
+    private let completion = DispatchGroup()
+    private let lock = NSLock()
+    private var finished = false
+
+    init(
+        handle: FileHandle,
         stream: BoundedCommandOutput.Stream,
-        output: BoundedCommandOutput,
-        group: DispatchGroup
+        output: BoundedCommandOutput
     ) {
-        group.enter()
-        DispatchQueue.global(qos: .utility).async {
-            defer { group.leave() }
-            while true {
-                let data = handle.readData(ofLength: 8 * 1_024)
-                guard !data.isEmpty else { return }
+        self.handle = handle
+        completion.enter()
+        handle.readabilityHandler = { [weak self] readable in
+            let data = readable.availableData
+            if data.isEmpty {
+                self?.finish()
+            } else {
                 output.append(data, stream: stream)
             }
         }
+    }
+
+    func wait(until deadline: DispatchTime) -> Bool {
+        completion.wait(timeout: deadline) == .success
+    }
+
+    func stop() {
+        handle.readabilityHandler = nil
+        try? handle.close()
+        finish()
+    }
+
+    private func finish() {
+        lock.lock()
+        guard !finished else {
+            lock.unlock()
+            return
+        }
+        finished = true
+        handle.readabilityHandler = nil
+        lock.unlock()
+        completion.leave()
     }
 }
 
@@ -154,17 +197,20 @@ public struct ParsedCommandTelemetry: Equatable, Sendable {
     public var componentPowers: [ComponentPowerReading]
     public var throttling: ThrottlingStatus?
     public var thermalPressure: String?
+    public var warnings: [String]
 
     public init(
         readings: [DetailedThermalReading] = [],
         componentPowers: [ComponentPowerReading] = [],
         throttling: ThrottlingStatus? = nil,
-        thermalPressure: String? = nil
+        thermalPressure: String? = nil,
+        warnings: [String] = []
     ) {
         self.readings = readings
         self.componentPowers = componentPowers
         self.throttling = throttling
         self.thermalPressure = thermalPressure
+        self.warnings = warnings
     }
 
     public var hasUsefulTelemetry: Bool {
@@ -256,28 +302,39 @@ public enum PowermetricsOutputParser {
                     textValue: text.lowercased(),
                     classification: .known
                 ))
-            case let .number(number) where lower.contains("temp")
-                && number.isFinite && (-40...150).contains(number):
-                telemetry.readings.append(.temperature(
-                    source: "powermetrics",
-                    identifier: path,
-                    label: path,
-                    category: category(for: path),
-                    celsius: number,
-                    classification: .heuristic
-                ))
+            case let .number(number) where lower.contains("temp"):
+                if number.isFinite, (-40...150).contains(number) {
+                    telemetry.readings.append(.temperature(
+                        source: "powermetrics",
+                        identifier: path,
+                        label: path,
+                        category: category(for: path),
+                        celsius: number,
+                        classification: .heuristic
+                    ))
+                } else {
+                    telemetry.warnings.append("\(path): nonfinite or implausible temperature omitted")
+                }
             case let .number(number) where isPowerField(leaf):
-                let watts = leaf.hasSuffix("_mw") || ["cpu_power", "gpu_power", "ane_power", "combined_power"].contains(leaf)
-                    ? number / 1_000
-                    : number
-                telemetry.componentPowers.append(ComponentPowerReading(
-                    name: componentName(for: path),
-                    watts: watts,
-                    source: "powermetrics"
-                ))
+                if number.isFinite, number >= 0 {
+                    let watts = leaf.hasSuffix("_mw") || ["cpu_power", "gpu_power", "ane_power", "combined_power"].contains(leaf)
+                        ? number / 1_000
+                        : number
+                    telemetry.componentPowers.append(ComponentPowerReading(
+                        name: componentName(for: path),
+                        watts: watts,
+                        source: "powermetrics"
+                    ))
+                } else {
+                    telemetry.warnings.append("\(path): nonfinite or negative power omitted")
+                }
             case let .number(number) where lower.contains("limit")
                 || lower.contains("forced") || lower.contains("sfi"):
-                strongestThrottle = max(strongestThrottle, Int(number.rounded()))
+                if number.isFinite, (0...100).contains(number) {
+                    strongestThrottle = max(strongestThrottle, Int(number.rounded()))
+                } else {
+                    telemetry.warnings.append("\(path): nonfinite or out-of-range percentage omitted")
+                }
             default:
                 break
             }
@@ -295,6 +352,7 @@ public enum PowermetricsOutputParser {
 
     private static func merge(_ source: ParsedCommandTelemetry, into target: inout ParsedCommandTelemetry) {
         target.readings.append(contentsOf: source.readings)
+        target.warnings.append(contentsOf: source.warnings)
         target.componentPowers = deduplicatedPowers(target.componentPowers + source.componentPowers)
         if let pressure = source.thermalPressure { target.thermalPressure = pressure }
         if let throttling = source.throttling,
@@ -344,7 +402,7 @@ public struct PowermetricsThermalCollector: ThermalCollector {
 
             let baseArguments = [
                 "--samplers", requested.joined(separator: ","),
-                "--show-plimits", "-n", "1", "-i", "1000"
+                "--show-plimits", "--handle-invalid-values", "-n", "1", "-i", "1000"
             ]
             let plistResult = try runner.run(
                 executable: "/usr/bin/powermetrics",
@@ -353,7 +411,7 @@ public struct PowermetricsThermalCollector: ThermalCollector {
             )
             var telemetry = PowermetricsOutputParser.parsePlist(plistResult.stdout)
             var finalResult = plistResult
-            var warnings: [String] = []
+            var warnings = telemetry.warnings
 
             if plistResult.timedOut {
                 if telemetry.hasUsefulTelemetry {
@@ -369,6 +427,7 @@ public struct PowermetricsThermalCollector: ThermalCollector {
                     timeout: 15
                 )
                 telemetry = PowermetricsOutputParser.parseText(textResult.stdoutString)
+                warnings.append(contentsOf: telemetry.warnings)
                 finalResult = textResult
                 if textResult.timedOut, !telemetry.hasUsefulTelemetry {
                     return failure("powermetrics text sample timed out", result: textResult, start: start)

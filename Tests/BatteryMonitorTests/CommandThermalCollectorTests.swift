@@ -44,6 +44,19 @@ final class CommandThermalCollectorTests: XCTestCase {
         XCTAssertEqual(truncated.stdout.count + truncated.stderr.count, 8)
     }
 
+    func testProcessRunnerTimeoutIncludesDescendantPipeDrain() throws {
+        let started = ProcessInfo.processInfo.systemUptime
+
+        let result = try ProcessCommandRunner(maximumBytes: 1_024).run(
+            executable: "/bin/sh",
+            arguments: ["-c", "sleep 3 & exit 0"],
+            timeout: 0.1
+        )
+
+        XCTAssertTrue(result.timedOut)
+        XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - started, 0.5)
+    }
+
     func testPowermetricsSamplerDiscoveryIsSectionBoundedAndIncludesSMCOnlyWhenListed() {
         let help = """
         Usage mentions cpu_power outside the list.
@@ -101,7 +114,37 @@ final class CommandThermalCollectorTests: XCTestCase {
         XCTAssertTrue(sampleArguments.contains("thermal,cpu_power,gpu_power,battery,sfi"))
         XCTAssertFalse(sampleArguments.contains { $0 == "smc" || $0.contains(",smc") })
         XCTAssertTrue(sampleArguments.contains("--show-plimits"))
+        XCTAssertTrue(sampleArguments.contains("--handle-invalid-values"))
         XCTAssertTrue(sampleArguments.contains("plist"))
+    }
+
+    func testPowermetricsRejectsNonfinitePlistLimitsWithoutTrapping() {
+        let plist = Data("""
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0"><dict>
+          <key>cpu_temperature</key><real>70</real>
+          <key>cpu_power_limit</key><real>nan</real>
+          <key>gpu_forced_idle</key><real>+infinity</real>
+        </dict></plist>
+        """.utf8) + Data([0])
+        let runner = FixtureCommandRunner(results: [
+            .fixture(stdout: """
+            The following samplers are supported by --samplers:
+                thermal pressure
+                cpu_power power
+                sfi forced-idle
+            and the following sampler groups are supported by --samplers:
+            """),
+            .fixture(stdoutData: plist)
+        ])
+
+        let result = PowermetricsThermalCollector(runner: runner).collect(at: .distantPast)
+
+        XCTAssertEqual(result.readings.first { $0.identifier == "cpu_temperature" }?.numericValue, 70)
+        XCTAssertEqual(result.status.state, .partial)
+        XCTAssertTrue(result.status.warnings.contains { $0.contains("nonfinite") })
+        XCTAssertEqual(result.throttling?.percentage, 0)
     }
 
     func testPowermetricsFallsBackToTextAndPreservesUsefulPartialNonzeroData() {
