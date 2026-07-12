@@ -2,6 +2,29 @@ import Foundation
 
 // MARK: - Battery Data Models
 
+enum BatterySpecificationCatalog {
+    // Apple MacBook Air 13-inch (M4) technical specification.
+    private static let ratedWattHoursByModel = [
+        "Mac16,12": 53.8
+    ]
+
+    static func ratedWattHours(for modelIdentifier: String) -> Double? {
+        ratedWattHoursByModel[modelIdentifier]
+    }
+}
+
+enum BatteryThroughputEstimator {
+    static func kilowattHours(cycleCount: Int, modelIdentifier: String) -> Double? {
+        guard cycleCount > 0,
+              let wattHours = BatterySpecificationCatalog.ratedWattHours(for: modelIdentifier) else {
+            return nil
+        }
+
+        let result = Double(cycleCount) * wattHours / 1000.0
+        return result.isFinite && result > 0 ? result : nil
+    }
+}
+
 struct BatteryData: Sendable {
     // Basic Info
     var isCharging: Bool = false
@@ -102,7 +125,6 @@ struct BatteryData: Sendable {
     var batteryAgeDays: Int?
 
     // PowerTelemetryData fields
-    var accumulatedSystemEnergy: Int64?  // Raw value for lifetime energy (can be very large)
     var adapterVoltage: Double?  // V (real-time from PowerTelemetryData)
     var adapterCurrent: Double?  // A (real-time from PowerTelemetryData)
     var adapterPower: Double?  // W (real-time from PowerTelemetryData)
@@ -162,21 +184,6 @@ struct BatteryData: Sendable {
         guard degradationPerCycle > 0 else { return nil }
         let cyclesTo80 = (Double(healthPercent) - 80.0) / degradationPerCycle
         return Int(cyclesTo80)
-    }
-
-    // Lifetime energy estimate (kWh)
-    var lifetimeEnergyKWh: Double? {
-        // Use AccumulatedSystemEnergyConsumed if available
-        if let energy = accumulatedSystemEnergy, energy > 1_000_000 {
-            // Empirically determined conversion (units appear to be in billions)
-            return Double(energy) / 1_000_000_000.0
-        }
-        // Fallback to estimation from operating time
-        guard let totalMinutes = totalOperatingTime, totalMinutes > 0 else { return nil }
-        let totalHours = Double(totalMinutes) / 60.0
-        let avgPower = voltage * Double(abs(amperage)) / 1000.0  // Rough estimate
-        guard avgPower > 0 else { return nil }
-        return totalHours * avgPower / 1000.0  // Convert Wh to kWh
     }
 
     // Battery age in years

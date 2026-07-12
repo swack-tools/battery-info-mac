@@ -16,7 +16,7 @@
 - Modify: `Sources/BatteryMonitor/BatteryData.swift`
 - Create: `Tests/BatteryMonitorTests/BatteryThroughputTests.swift`
 
-- [ ] **Step 1: Write failing catalog and estimator tests**
+- [x] **Step 1: Write failing catalog and estimator tests**
 
 Create tests covering the verified model, unknown models, the 311-cycle result, and invalid cycle counts.
 
@@ -46,7 +46,7 @@ final class BatteryThroughputTests: XCTestCase {
 }
 ```
 
-- [ ] **Step 2: Run the focused tests and verify failure**
+- [x] **Step 2: Run the focused tests and verify failure**
 
 Run:
 
@@ -56,7 +56,7 @@ swift test --filter BatteryThroughputTests
 
 Expected: compilation fails because the catalog and estimator do not exist.
 
-- [ ] **Step 3: Implement the minimal catalog and estimator**
+- [x] **Step 3: Implement the minimal catalog and estimator**
 
 Add pure model-layer types:
 
@@ -83,7 +83,7 @@ enum BatteryThroughputEstimator {
 }
 ```
 
-- [ ] **Step 4: Run the focused tests and verify success**
+- [x] **Step 4: Run the focused tests and verify success**
 
 Run:
 
@@ -103,7 +103,7 @@ Expected: all four tests pass.
 - Modify: `Tests/BatteryMonitorTests/BatteryThroughputTests.swift`
 - Modify: `Tests/BatteryMonitorTests/ProjectStructureTests.swift`
 
-- [ ] **Step 1: Write failing display and removal tests**
+- [x] **Step 1: Write failing display and removal tests**
 
 Add formatter tests:
 
@@ -141,7 +141,7 @@ func testUndocumentedLifetimeEnergyPathIsRemoved() throws {
 }
 ```
 
-- [ ] **Step 2: Run the focused tests and verify failure**
+- [x] **Step 2: Run the focused tests and verify failure**
 
 Run:
 
@@ -152,7 +152,7 @@ swift test --filter ProjectStructureTests.testUndocumentedLifetimeEnergyPathIsRe
 
 Expected: formatter compilation fails and the old production path remains present.
 
-- [ ] **Step 3: Implement display formatting and remove the old path**
+- [x] **Step 3: Implement display formatting and remove the old path**
 
 Rename `BatteryDisplayInfo.lifetimeEnergy` to `estimatedBatteryThroughput`. Add:
 
@@ -170,7 +170,7 @@ In `fetch()`, populate it with `batteryData.cycleCount` and `systemInfo.macModel
 
 Delete `accumulatedSystemEnergy`, `lifetimeEnergyKWh`, `AccumulatedSystemEnergyConsumed` parsing, and the operating-time/current-power fallback. Preserve `totalOperatingTime`.
 
-- [ ] **Step 4: Run the focused tests and verify success**
+- [x] **Step 4: Run the focused tests and verify success**
 
 Run:
 
@@ -186,7 +186,7 @@ Expected: all selected tests pass.
 **Files:**
 - Modify: `docs/superpowers/plans/2026-07-12-estimated-battery-throughput.md`
 
-- [ ] **Step 1: Run repository checks**
+- [x] **Step 1: Run repository checks**
 
 Run:
 
@@ -198,7 +198,7 @@ swift test
 
 Expected: lint succeeds and all tests pass with zero failures.
 
-- [ ] **Step 2: Commit the implementation**
+- [x] **Step 2: Commit the implementation**
 
 Run:
 

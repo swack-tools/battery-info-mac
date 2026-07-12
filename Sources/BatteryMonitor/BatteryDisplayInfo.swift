@@ -68,7 +68,7 @@ struct BatteryDisplayInfo {
     var gaugeSoC: String? = nil
     var dailyChargeRange: String? = nil
     var shippingMode: String? = nil
-    var lifetimeEnergy: String? = nil
+    var estimatedBatteryThroughput: String? = nil
     var postChargeWait: String? = nil
     var postDischargeWait: String? = nil
     var invalidWakeTime: String? = nil
@@ -252,6 +252,15 @@ struct BatteryDisplayInfo {
     }
 
     /// Fetch current battery information from IOKit
+    static func estimatedBatteryThroughputText(cycleCount: Int, modelIdentifier: String) -> String? {
+        guard let value = BatteryThroughputEstimator.kilowattHours(
+            cycleCount: cycleCount,
+            modelIdentifier: modelIdentifier
+        ) else { return nil }
+
+        return String(format: "~%.1f kWh", value)
+    }
+
     static func fetch() -> BatteryDisplayInfo {
         var info = BatteryDisplayInfo()
 
@@ -490,9 +499,10 @@ struct BatteryDisplayInfo {
             }
         }
 
-        if let energy = batteryData.lifetimeEnergyKWh {
-            info.lifetimeEnergy = String(format: "~%.1f kWh (est)", energy)
-        }
+        info.estimatedBatteryThroughput = estimatedBatteryThroughputText(
+            cycleCount: batteryData.cycleCount,
+            modelIdentifier: systemInfo.macModel
+        )
 
         if let wait = batteryData.postChargeWaitSeconds {
             info.postChargeWait = String(format: "%d min (%ds)", wait / 60, wait)
