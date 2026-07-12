@@ -194,10 +194,10 @@ final class DetailedThermalTelemetryTests: XCTestCase {
         let summary = ThermalSummaryBuilder.build(from: readings)
 
         XCTAssertEqual(summary.map(\.name), [
-            "CPU", "GPU", "Battery", "Memory", "Storage", "PMU", "Enclosure", "System", "Unknown"
+            "CPU", "GPU", "Battery", "Memory", "Storage", "PMU", "Enclosure", "System"
         ])
         XCTAssertEqual(summary.map(\.source), [
-            "smc", "smc", "appleSmartBattery", "smc", "iohid", "iohid", "iohid", "fallback-system", "fallback-system"
+            "smc", "smc", "appleSmartBattery", "smc", "iohid", "iohid", "iohid", "fallback-system"
         ])
     }
 

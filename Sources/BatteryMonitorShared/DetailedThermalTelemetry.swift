@@ -119,7 +119,7 @@ public struct ThermalSourceStatus: Codable, Equatable, Sendable {
 
 public enum ThermalSummaryBuilder {
     private static let categoryOrder: [ThermalCategory] = [
-        .cpu, .gpu, .battery, .memory, .storage, .pmu, .enclosure, .system, .unknown
+        .cpu, .gpu, .battery, .memory, .storage, .pmu, .enclosure, .system
     ]
 
     private static let excludedCurrentValueTerms = [
