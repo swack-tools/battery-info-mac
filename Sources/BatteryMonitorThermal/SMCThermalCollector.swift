@@ -311,6 +311,7 @@ enum SMCReadingMappingError: Error, Equatable, CustomStringConvertible {
 enum SMCReadingMapper {
     static func map(_ raw: SMCRawRecord, timestamp: Date) throws -> DetailedThermalReading? {
         _ = timestamp
+        guard raw.key != "TVDi" else { return nil }
         let classification = SMCSensorClassifier.classify(key: raw.key)
         guard classification.isTemperature else { return nil }
         guard let value = try SMCDecoder.decode(type: raw.dataType, bytes: raw.data) else {

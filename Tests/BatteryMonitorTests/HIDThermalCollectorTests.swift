@@ -4,6 +4,66 @@ import XCTest
 @testable import BatteryMonitorThermal
 
 final class HIDThermalCollectorTests: XCTestCase {
+    func testMapperOmitsConfirmedUnreliablePMUProducts() throws {
+        for product in ["PMU tdev1", " pmu2 TDEV1 ", "PMU2 tdev3"] {
+            let raw = HIDRawRecord(
+                index: 0,
+                product: product,
+                location: "",
+                registryID: 1,
+                celsius: -21.8
+            )
+
+            XCTAssertNil(try HIDReadingMapper.map(raw), product)
+        }
+    }
+
+    func testMapperOmitsExcludedProductBeforeValidatingTemperature() throws {
+        let raw = HIDRawRecord(
+            index: 0,
+            product: "PMU2 tdev3",
+            location: "",
+            registryID: 1,
+            celsius: .nan
+        )
+
+        XCTAssertNil(try HIDReadingMapper.map(raw))
+    }
+
+    func testCollectorTreatsBatchOfOnlyExcludedProductsAsSuccessfulEmptyData() {
+        let provider = FixtureHIDProvider(batch: HIDRecordBatch(
+            records: [
+                HIDRawRecord(index: 0, product: "PMU tdev1", location: "", registryID: 1, celsius: -21.8),
+                HIDRawRecord(index: 1, product: "PMU2 tdev1", location: "", registryID: 2, celsius: -21.8),
+                HIDRawRecord(index: 2, product: "PMU2 tdev3", location: "", registryID: 3, celsius: .nan)
+            ],
+            attemptedCount: 3
+        ))
+
+        let result = HIDThermalCollector(provider: provider).collect(at: .distantPast)
+
+        XCTAssertEqual(result.readings, [])
+        XCTAssertEqual(result.status.state, .success)
+        XCTAssertEqual(result.status.readingCount, 0)
+        XCTAssertEqual(result.status.scannedRecordCount, 3)
+        XCTAssertEqual(result.status.warnings, [])
+        XCTAssertNil(result.status.error)
+    }
+
+    func testMapperPreservesSimilarValidPMUProducts() throws {
+        for product in ["PMU tdev3", "PMU2 tdev2"] {
+            let raw = HIDRawRecord(
+                index: 0,
+                product: product,
+                location: "",
+                registryID: 1,
+                celsius: 50
+            )
+
+            XCTAssertNotNil(try HIDReadingMapper.map(raw), product)
+        }
+    }
+
     func testClassifierMapsKnownProductFamilies() {
         let cases: [(String, ThermalCategory)] = [
             ("CPU Die Temperature", .cpu),
@@ -30,7 +90,7 @@ final class HIDThermalCollectorTests: XCTestCase {
             celsius: 61.25
         )
 
-        let reading = try HIDReadingMapper.map(raw)
+        let reading = try XCTUnwrap(HIDReadingMapper.map(raw))
 
         XCTAssertEqual(reading.source, "iohid")
         XCTAssertEqual(reading.identifier, "registry-42:cpu-die-temperature:cpu-0")
@@ -44,13 +104,13 @@ final class HIDThermalCollectorTests: XCTestCase {
     }
 
     func testMapperUsesGenericIdentityAndFallbackLabelWhenPropertiesAreEmpty() throws {
-        let reading = try HIDReadingMapper.map(HIDRawRecord(
+        let reading = try XCTUnwrap(HIDReadingMapper.map(HIDRawRecord(
             index: 3,
             product: "",
             location: "",
             registryID: 0,
             celsius: 22
-        ))
+        )))
 
         XCTAssertEqual(reading.identifier, "sensor:unidentified")
         XCTAssertEqual(reading.label, "Unidentified IOHID temperature")
@@ -69,8 +129,8 @@ final class HIDThermalCollectorTests: XCTestCase {
             HIDRawRecord(index: 1, product: "CPU Die Temperature", location: "CPU 0", registryID: 0, celsius: 50)
         ]
 
-        let firstIdentifiers = try firstOrder.map(HIDReadingMapper.map).map(\.identifier).sorted()
-        let reversedIdentifiers = try reversedOrder.map(HIDReadingMapper.map).map(\.identifier).sorted()
+        let firstIdentifiers = try firstOrder.compactMap(HIDReadingMapper.map).map(\.identifier).sorted()
+        let reversedIdentifiers = try reversedOrder.compactMap(HIDReadingMapper.map).map(\.identifier).sorted()
 
         XCTAssertEqual(firstIdentifiers, reversedIdentifiers)
         XCTAssertEqual(firstIdentifiers, [
@@ -80,13 +140,13 @@ final class HIDThermalCollectorTests: XCTestCase {
     }
 
     func testCompletelyUnidentifiedSensorUsesGenericStableIdentityAndWarning() throws {
-        let reading = try HIDReadingMapper.map(HIDRawRecord(
+        let reading = try XCTUnwrap(HIDReadingMapper.map(HIDRawRecord(
             index: 99,
             product: "",
             location: "",
             registryID: 0,
             celsius: 22
-        ))
+        )))
 
         XCTAssertEqual(reading.identifier, "sensor:unidentified")
         XCTAssertEqual(reading.label, "Unidentified IOHID temperature")
@@ -94,13 +154,13 @@ final class HIDThermalCollectorTests: XCTestCase {
     }
 
     func testMapperPreservesImplausibleFiniteValueWithWarning() throws {
-        let reading = try HIDReadingMapper.map(HIDRawRecord(
+        let reading = try XCTUnwrap(HIDReadingMapper.map(HIDRawRecord(
             index: 0,
             product: "GPU temperature",
             location: "die",
             registryID: 9,
             celsius: 151
-        ))
+        )))
 
         XCTAssertEqual(reading.numericValue, 151)
         XCTAssertEqual(reading.warnings, [
@@ -343,7 +403,7 @@ final class HIDThermalCollectorTests: XCTestCase {
         let provider = LiveHIDRecordProvider(libraryFactory: { library })
 
         let batch = try provider.recordBatch()
-        let identifiers = try batch.records.map(HIDReadingMapper.map).map(\.identifier).sorted()
+        let identifiers = try batch.records.compactMap(HIDReadingMapper.map).map(\.identifier).sorted()
 
         XCTAssertEqual(batch.records.map(\.product), ["CPU Temperature", "CPU Temperature"])
         XCTAssertEqual(batch.records.map(\.location), ["101", "202"])
