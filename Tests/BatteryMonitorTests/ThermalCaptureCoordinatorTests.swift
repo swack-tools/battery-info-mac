@@ -134,6 +134,26 @@ final class ThermalCaptureCoordinatorTests: XCTestCase {
         XCTAssertEqual(snapshot.thermalPressure, "Moderate")
     }
 
+    func testExplicitPressureRaisesNominalThrottleToMatchingSeverity() {
+        let pressure = FixtureThermalCollector(source: "processInfo", result: result(
+            source: "processInfo",
+            readings: [],
+            pressure: "Fair"
+        ))
+        let nominal = FixtureThermalCollector(source: "pmset", result: result(
+            source: "pmset",
+            readings: [],
+            throttling: .nominal(source: "pmset")
+        ))
+
+        let snapshot = ThermalCaptureCoordinator(collectors: [pressure, nominal]).collect()
+
+        XCTAssertEqual(snapshot.thermalPressure, "Fair")
+        XCTAssertEqual(snapshot.throttling.level, "Fair")
+        XCTAssertEqual(snapshot.throttling.percentage, 30)
+        XCTAssertEqual(snapshot.throttling.source, "processInfo")
+    }
+
     func testDefaultCollectorOrderIsStable() {
         XCTAssertEqual(
             ThermalCaptureCoordinator.default.sources,

@@ -114,22 +114,58 @@ public struct ThermalCaptureCoordinator: Sendable {
         }
 
         let detailedReadings = results.flatMap(\.readings)
-        let throttling = results.compactMap(\.throttling).max { lhs, rhs in
-            lhs.percentage < rhs.percentage
-        } ?? .nominal(source: "coordinator")
-        let explicitPressures = results.flatMap { result -> [String] in
-            var pressures = [result.thermalPressure].compactMap { $0 }
-            pressures.append(contentsOf: result.readings.compactMap { reading in
-                reading.kind == .thermalPressure ? reading.textValue : nil
+        var throttling = ThrottlingStatus.nominal(source: "coordinator")
+        for candidate in results.compactMap(\.throttling)
+        where candidate.percentage > throttling.percentage
+            || throttling.source == "coordinator" {
+            throttling = candidate
+        }
+        var pressureCandidates: [PressureCandidate] = []
+        for result in results {
+            if let pressure = result.thermalPressure {
+                pressureCandidates.append(PressureCandidate(
+                    text: pressure,
+                    source: result.status.source
+                ))
+            }
+            pressureCandidates.append(contentsOf: result.readings.compactMap { reading in
+                guard reading.kind == .thermalPressure, let text = reading.textValue else {
+                    return nil
+                }
+                return PressureCandidate(text: text, source: reading.source)
             })
-            return pressures
         }
-        var pressureCandidates = explicitPressures
-        if throttling.percentage > 0 {
-            pressureCandidates.append(throttling.level)
+        if throttling.percentage > 0 || pressureRank(throttling.level) > 0 {
+            pressureCandidates.append(PressureCandidate(
+                text: throttling.level,
+                source: throttling.source
+            ))
         }
-        let pressure = pressureCandidates.max { lhs, rhs in
-            pressureRank(lhs) < pressureRank(rhs)
+        var strongestPressure: PressureCandidate?
+        for candidate in pressureCandidates
+        where strongestPressure == nil
+            || pressureRank(candidate.text) > pressureRank(strongestPressure?.text ?? "") {
+            strongestPressure = candidate
+        }
+        if let strongestPressure {
+            let selectedRank = pressureRank(strongestPressure.text)
+            let throttleRank = pressureRank(throttling.level)
+            if selectedRank > throttleRank {
+                throttling = ThrottlingStatus(
+                    level: normalizedPressure(strongestPressure.text),
+                    percentage: max(
+                        throttling.percentage,
+                        defaultPercentage(forPressure: strongestPressure.text)
+                    ),
+                    source: strongestPressure.source
+                )
+            } else if selectedRank == throttleRank, selectedRank > 0 {
+                throttling = ThrottlingStatus(
+                    level: normalizedPressure(strongestPressure.text),
+                    percentage: throttling.percentage,
+                    source: throttling.source
+                )
+            }
         }
 
         return ThermalSnapshot(
@@ -137,7 +173,7 @@ public struct ThermalCaptureCoordinator: Sendable {
             thermalReadings: ThermalSummaryBuilder.build(from: detailedReadings),
             componentPowers: deduplicatedComponentPowers(results.flatMap(\.componentPowers)),
             throttling: throttling,
-            thermalPressure: pressure.map(normalizedPressure),
+            thermalPressure: strongestPressure.map { normalizedPressure($0.text) },
             messages: boundedMessages(from: results.map(\.status)),
             detailedReadings: detailedReadings,
             sourceStatuses: results.map(\.status)
@@ -198,6 +234,20 @@ public struct ThermalCaptureCoordinator: Sendable {
         let value = pressure.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let first = value.first else { return "Unknown" }
         return first.uppercased() + value.dropFirst().lowercased()
+    }
+
+    private func defaultPercentage(forPressure pressure: String) -> Int {
+        switch pressureRank(pressure) {
+        case 3: return 90
+        case 2: return 60
+        case 1: return 30
+        default: return 0
+        }
+    }
+
+    private struct PressureCandidate {
+        var text: String
+        var source: String
     }
 }
 
