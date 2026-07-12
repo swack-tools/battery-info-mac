@@ -24,6 +24,17 @@ final class ProjectStructureTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: repoRoot.appendingPathComponent("scripts").path))
     }
 
+    func testStandaloneThermalProbeAndCShimAreRemoved() throws {
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: repoRoot.appendingPathComponent("Tools/ThermalProbe").path
+            )
+        )
+        let package = try String(contentsOf: repoRoot.appendingPathComponent("Package.swift"))
+        XCTAssertTrue(package.contains("BatteryMonitorThermal"))
+        XCTAssertFalse(package.contains("CThermalProbeShim"))
+    }
+
     func testReleaseWorkflowDoesNotPublishCliArtifact() throws {
         let workflow = try String(contentsOf: repoRoot.appendingPathComponent(".github/workflows/release.yml"))
 
