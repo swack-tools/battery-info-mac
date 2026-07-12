@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import XCTest
 @testable import BatteryMonitorThermal
@@ -55,6 +56,27 @@ final class CommandThermalCollectorTests: XCTestCase {
 
         XCTAssertTrue(result.timedOut)
         XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - started, 0.5)
+    }
+
+    func testProcessRunnerKillsDescendantGroupWhenDirectChildExitsFirst() throws {
+        let result = try ProcessCommandRunner(maximumBytes: 1_024).run(
+            executable: "/bin/sh",
+            arguments: ["-c", "sleep 30 & echo $!; exit 0"],
+            timeout: 0.1
+        )
+        let descendantPID = try XCTUnwrap(Int32(
+            result.stdoutString.trimmingCharacters(in: .whitespacesAndNewlines)
+        ))
+        defer {
+            if Darwin.kill(descendantPID, 0) == 0 {
+                Darwin.kill(descendantPID, SIGKILL)
+            }
+        }
+
+        XCTAssertTrue(result.timedOut)
+        errno = 0
+        XCTAssertEqual(Darwin.kill(descendantPID, 0), -1)
+        XCTAssertEqual(errno, ESRCH)
     }
 
     func testPowermetricsSamplerDiscoveryIsSectionBoundedAndIncludesSMCOnlyWhenListed() {

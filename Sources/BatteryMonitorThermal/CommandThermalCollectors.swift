@@ -55,55 +55,59 @@ public final class ProcessCommandRunner: CommandRunning, @unchecked Sendable {
         timeout: TimeInterval
     ) throws -> CommandResult {
         let started = DispatchTime.now().uptimeNanoseconds
-        let process = Process()
-        let stdoutPipe = Pipe()
-        let stderrPipe = Pipe()
         let output = BoundedCommandOutput(maximumBytes: maximumBytes)
-        let exited = DispatchSemaphore(value: 0)
         let deadline = DispatchTime.now() + max(0, timeout)
-
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = arguments
-        process.standardOutput = stdoutPipe
-        process.standardError = stderrPipe
-        process.terminationHandler = { _ in exited.signal() }
+        let spawned = try spawn(executable: executable, arguments: arguments)
+        let stdoutHandle = FileHandle(fileDescriptor: spawned.stdoutDescriptor, closeOnDealloc: true)
+        let stderrHandle = FileHandle(fileDescriptor: spawned.stderrDescriptor, closeOnDealloc: true)
         let stdoutDrain = CommandPipeDrain(
-            handle: stdoutPipe.fileHandleForReading,
+            handle: stdoutHandle,
             stream: .stdout,
             output: output
         )
         let stderrDrain = CommandPipeDrain(
-            handle: stderrPipe.fileHandleForReading,
+            handle: stderrHandle,
             stream: .stderr,
             output: output
         )
-
-        try process.run()
-        stdoutPipe.fileHandleForWriting.closeFile()
-        stderrPipe.fileHandleForWriting.closeFile()
-
-        var timedOut = false
-        if exited.wait(timeout: deadline) == .timedOut {
-            timedOut = true
+        var waitStatus: Int32 = 0
+        var childReaped = false
+        defer {
             stdoutDrain.stop()
             stderrDrain.stop()
-            process.terminate()
-            if exited.wait(timeout: .now() + 0.05) == .timedOut {
-                Darwin.kill(process.processIdentifier, SIGKILL)
-                _ = exited.wait(timeout: .now() + 0.1)
+            if !childReaped {
+                _ = Darwin.kill(-spawned.processID, SIGKILL)
+                reap(processID: spawned.processID, status: &waitStatus)
             }
         }
-        if !stdoutDrain.wait(until: deadline) || !stderrDrain.wait(until: deadline) {
+
+        childReaped = try waitForExit(
+            processID: spawned.processID,
+            status: &waitStatus,
+            deadline: deadline
+        )
+        var timedOut = false
+        if !childReaped
+            || !stdoutDrain.wait(until: deadline)
+            || !stderrDrain.wait(until: deadline) {
             timedOut = true
+            _ = Darwin.kill(-spawned.processID, SIGTERM)
+            usleep(20_000)
+            _ = Darwin.kill(-spawned.processID, SIGKILL)
             stdoutDrain.stop()
             stderrDrain.stop()
+            if !childReaped {
+                reap(processID: spawned.processID, status: &waitStatus)
+                childReaped = true
+            }
+            waitForProcessGroupExit(processGroupID: spawned.processID)
         }
 
         let captured = output.snapshot()
         return CommandResult(
             executable: executable,
             arguments: arguments,
-            terminationStatus: process.isRunning ? -1 : process.terminationStatus,
+            terminationStatus: exitCode(fromWaitStatus: waitStatus),
             stdout: captured.stdout,
             stderr: captured.stderr,
             timedOut: timedOut,
@@ -112,6 +116,165 @@ public final class ProcessCommandRunner: CommandRunning, @unchecked Sendable {
         )
     }
 
+    private func spawn(executable: String, arguments: [String]) throws -> SpawnedCommand {
+        var stdoutDescriptors = [Int32](repeating: -1, count: 2)
+        var stderrDescriptors = [Int32](repeating: -1, count: 2)
+        guard Darwin.pipe(&stdoutDescriptors) == 0 else {
+            throw posixError(errno, operation: "pipe stdout")
+        }
+        guard Darwin.pipe(&stderrDescriptors) == 0 else {
+            closeDescriptors(stdoutDescriptors)
+            throw posixError(errno, operation: "pipe stderr")
+        }
+
+        var fileActions: posix_spawn_file_actions_t?
+        var attributes: posix_spawnattr_t?
+        var processID: pid_t = 0
+        do {
+            try check(posix_spawn_file_actions_init(&fileActions), operation: "posix_spawn_file_actions_init")
+            defer { posix_spawn_file_actions_destroy(&fileActions) }
+            try check(posix_spawnattr_init(&attributes), operation: "posix_spawnattr_init")
+            defer { posix_spawnattr_destroy(&attributes) }
+
+            try check(
+                posix_spawn_file_actions_adddup2(&fileActions, stdoutDescriptors[1], STDOUT_FILENO),
+                operation: "posix_spawn stdout dup2"
+            )
+            try check(
+                posix_spawn_file_actions_adddup2(&fileActions, stderrDescriptors[1], STDERR_FILENO),
+                operation: "posix_spawn stderr dup2"
+            )
+            for descriptor in stdoutDescriptors + stderrDescriptors {
+                try check(
+                    posix_spawn_file_actions_addclose(&fileActions, descriptor),
+                    operation: "posix_spawn close"
+                )
+            }
+
+            var defaultSignals = sigset_t()
+            sigemptyset(&defaultSignals)
+            for signal in 1..<NSIG where signal != SIGKILL && signal != SIGSTOP {
+                sigaddset(&defaultSignals, signal)
+            }
+            var signalMask = sigset_t()
+            sigemptyset(&signalMask)
+            try check(
+                posix_spawnattr_setsigdefault(&attributes, &defaultSignals),
+                operation: "posix_spawnattr_setsigdefault"
+            )
+            try check(
+                posix_spawnattr_setsigmask(&attributes, &signalMask),
+                operation: "posix_spawnattr_setsigmask"
+            )
+            try check(
+                posix_spawnattr_setpgroup(&attributes, 0),
+                operation: "posix_spawnattr_setpgroup"
+            )
+            let flags = Int16(
+                POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK
+            )
+            try check(
+                posix_spawnattr_setflags(&attributes, flags),
+                operation: "posix_spawnattr_setflags"
+            )
+
+            var argumentPointers = ([executable] + arguments).map { strdup($0) }
+            guard argumentPointers.allSatisfy({ $0 != nil }) else {
+                argumentPointers.forEach { free($0) }
+                throw posixError(ENOMEM, operation: "strdup")
+            }
+            argumentPointers.append(nil)
+            defer { argumentPointers.forEach { free($0) } }
+
+            let spawnStatus = executable.withCString { executablePath in
+                argumentPointers.withUnsafeMutableBufferPointer { buffer in
+                    posix_spawn(
+                        &processID,
+                        executablePath,
+                        &fileActions,
+                        &attributes,
+                        buffer.baseAddress,
+                        environ
+                    )
+                }
+            }
+            try check(spawnStatus, operation: "posix_spawn")
+        } catch {
+            closeDescriptors(stdoutDescriptors + stderrDescriptors)
+            throw error
+        }
+
+        Darwin.close(stdoutDescriptors[1])
+        Darwin.close(stderrDescriptors[1])
+        return SpawnedCommand(
+            processID: processID,
+            stdoutDescriptor: stdoutDescriptors[0],
+            stderrDescriptor: stderrDescriptors[0]
+        )
+    }
+
+    private func waitForExit(
+        processID: pid_t,
+        status: inout Int32,
+        deadline: DispatchTime
+    ) throws -> Bool {
+        while true {
+            let result = Darwin.waitpid(processID, &status, WNOHANG)
+            if result == processID { return true }
+            if result < 0 {
+                if errno == EINTR { continue }
+                throw posixError(errno, operation: "waitpid")
+            }
+            guard DispatchTime.now() < deadline else { return false }
+            usleep(1_000)
+        }
+    }
+
+    private func reap(processID: pid_t, status: inout Int32) {
+        while true {
+            let result = Darwin.waitpid(processID, &status, 0)
+            if result == processID || (result < 0 && errno == ECHILD) { return }
+            if result < 0 && errno == EINTR { continue }
+            return
+        }
+    }
+
+    private func waitForProcessGroupExit(processGroupID: pid_t) {
+        let deadline = DispatchTime.now() + 0.25
+        while Darwin.kill(-processGroupID, 0) == 0 || errno == EPERM {
+            guard DispatchTime.now() < deadline else { return }
+            usleep(1_000)
+        }
+    }
+
+    private func exitCode(fromWaitStatus status: Int32) -> Int32 {
+        let signal = status & 0x7f
+        return signal == 0 ? (status >> 8) & 0xff : signal
+    }
+
+    private func check(_ status: Int32, operation: String) throws {
+        guard status == 0 else { throw posixError(status, operation: operation) }
+    }
+
+    private func closeDescriptors(_ descriptors: [Int32]) {
+        for descriptor in descriptors where descriptor >= 0 {
+            Darwin.close(descriptor)
+        }
+    }
+
+    private func posixError(_ code: Int32, operation: String) -> NSError {
+        NSError(
+            domain: NSPOSIXErrorDomain,
+            code: Int(code),
+            userInfo: [NSLocalizedDescriptionKey: "\(operation): \(String(cString: strerror(code)))"]
+        )
+    }
+}
+
+private struct SpawnedCommand {
+    var processID: pid_t
+    var stdoutDescriptor: Int32
+    var stderrDescriptor: Int32
 }
 
 private final class CommandPipeDrain: @unchecked Sendable {
