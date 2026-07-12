@@ -1,3 +1,4 @@
+import CThermalProbeShim
 import Foundation
 
 public enum SMCDecodeError: Error, Equatable {
@@ -167,5 +168,210 @@ public enum SensorClassifier {
             kind: .temperature,
             classification: .heuristic
         )
+    }
+}
+
+public struct SMCRawRecord: Equatable {
+    public var key: String
+    public var dataType: String
+    public var data: [UInt8]
+    public var status: Int32
+
+    public init(key: String, dataType: String, data: [UInt8], status: Int32) {
+        self.key = key
+        self.dataType = dataType
+        self.data = data
+        self.status = status
+    }
+}
+
+public protocol SMCRecordProviding {
+    func records() throws -> [SMCRawRecord]
+}
+
+public struct ShimProviderError: Error, CustomStringConvertible {
+    public var source: String
+    public var status: Int32
+    public var message: String
+
+    public init(source: String, status: Int32, message: String) {
+        self.source = source
+        self.status = status
+        self.message = message
+    }
+
+    public var description: String {
+        "\(source) shim failed (\(status)): \(message)"
+    }
+}
+
+enum ShimBridge {
+    static func string<T>(from value: T) -> String {
+        var copy = value
+        return withUnsafeBytes(of: &copy) { rawBuffer in
+            let bytes = rawBuffer.prefix { $0 != 0 }
+            return String(decoding: bytes, as: UTF8.self)
+        }
+    }
+
+    static func bytes<T>(from value: T, count: Int) -> [UInt8] {
+        var copy = value
+        return withUnsafeBytes(of: &copy) { rawBuffer in
+            Array(rawBuffer.prefix(max(0, min(count, rawBuffer.count))))
+        }
+    }
+
+    static func errorMessage(from buffer: [CChar]) -> String {
+        buffer.withUnsafeBufferPointer { pointer in
+            guard let baseAddress = pointer.baseAddress else { return "unknown error" }
+            return String(cString: baseAddress)
+        }
+    }
+}
+
+public struct LiveSMCRecordProvider: SMCRecordProviding {
+    public init() {}
+
+    public func records() throws -> [SMCRawRecord] {
+        var pointer: UnsafeMutablePointer<TPSMCRecord>?
+        var count = 0
+        var error = [CChar](repeating: 0, count: 512)
+        let status = error.withUnsafeMutableBufferPointer { errorBuffer in
+            tp_smc_copy_records(
+                &pointer,
+                &count,
+                errorBuffer.baseAddress,
+                errorBuffer.count
+            )
+        }
+        guard status == 0, let pointer else {
+            throw ShimProviderError(
+                source: "smc",
+                status: status,
+                message: ShimBridge.errorMessage(from: error)
+            )
+        }
+        defer { tp_free_records(pointer) }
+
+        return (0..<count).map { index in
+            let record = pointer[index]
+            return SMCRawRecord(
+                key: ShimBridge.string(from: record.key),
+                dataType: ShimBridge.string(from: record.data_type),
+                data: ShimBridge.bytes(from: record.bytes, count: Int(record.data_size)),
+                status: record.status
+            )
+        }
+    }
+}
+
+public struct SMCCollector: ThermalCollector {
+    public let source = "smc"
+    private let provider: any SMCRecordProviding
+
+    public init(provider: any SMCRecordProviding = LiveSMCRecordProvider()) {
+        self.provider = provider
+    }
+
+    public func collect(context: CollectionContext) -> SourceResult {
+        let startedAt = context.clock.wallNow
+        let monotonicStart = context.clock.monotonicNow
+
+        do {
+            let rawRecords = try provider.records()
+            var readings: [Reading] = []
+            var warnings: [String] = []
+
+            for raw in rawRecords {
+                do {
+                    if let reading = try Self.map(
+                        raw: raw,
+                        timestamp: context.clock.wallNow,
+                        includeRaw: context.includeRaw
+                    ) {
+                        readings.append(reading)
+                    }
+                } catch {
+                    warnings.append("\(raw.key): \(error)")
+                }
+            }
+
+            return .completed(
+                source: source,
+                startedAt: startedAt,
+                durationMilliseconds: elapsedMilliseconds(since: monotonicStart, clock: context.clock),
+                readings: readings,
+                warnings: warnings,
+                capabilities: [
+                    "rawRecordCount": .number(Double(rawRecords.count)),
+                    "emittedReadingCount": .number(Double(readings.count))
+                ]
+            )
+        } catch {
+            return .failed(
+                source: source,
+                startedAt: startedAt,
+                durationMilliseconds: elapsedMilliseconds(since: monotonicStart, clock: context.clock),
+                code: "smc_collection_failed",
+                message: String(describing: error)
+            )
+        }
+    }
+
+    public static func map(
+        raw: SMCRawRecord,
+        timestamp: Date,
+        includeRaw: Bool
+    ) throws -> Reading? {
+        let classification = SensorClassifier.classifySMC(key: raw.key)
+        let decoded = try SMCDecoder.decode(type: raw.dataType, bytes: raw.data)
+
+        guard let value = decoded else {
+            guard includeRaw else { return nil }
+            return Reading(
+                source: "smc",
+                identifier: raw.key,
+                label: classification.label,
+                category: classification.category,
+                kind: .rawContext,
+                value: .text(raw.data.map { String(format: "%02x", $0) }.joined()),
+                unit: nil,
+                timestamp: timestamp,
+                classification: classification.classification,
+                metadata: ["smcStatus": .number(Double(raw.status))],
+                warnings: raw.status == 0 ? [] : ["SMC returned status \(raw.status)"],
+                rawDataType: raw.dataType,
+                rawBytes: raw.data
+            )
+        }
+
+        guard classification.kind == .temperature || includeRaw else { return nil }
+        var warnings: [String] = []
+        if classification.kind == .temperature, !(-40...150).contains(value) {
+            warnings.append("temperature is outside the -40...150 C plausibility range")
+        }
+        if raw.status != 0 {
+            warnings.append("SMC returned status \(raw.status)")
+        }
+
+        return Reading(
+            source: "smc",
+            identifier: raw.key,
+            label: classification.label,
+            category: classification.category,
+            kind: classification.kind,
+            value: .number(value),
+            unit: classification.kind == .temperature ? "C" : nil,
+            timestamp: timestamp,
+            classification: classification.classification,
+            metadata: ["smcStatus": .number(Double(raw.status))],
+            warnings: warnings,
+            rawDataType: includeRaw ? raw.dataType : nil,
+            rawBytes: includeRaw ? raw.data : nil
+        )
+    }
+
+    private func elapsedMilliseconds(since start: TimeInterval, clock: any ProbeClock) -> Double {
+        max(0, (clock.monotonicNow - start) * 1_000)
     }
 }
