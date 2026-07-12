@@ -324,24 +324,26 @@ public struct SMCCollector: ThermalCollector {
         includeRaw: Bool
     ) throws -> Reading? {
         let classification = SensorClassifier.classifySMC(key: raw.key)
-        let decoded = try SMCDecoder.decode(type: raw.dataType, bytes: raw.data)
+        let decoded: Double?
+        do {
+            decoded = try SMCDecoder.decode(type: raw.dataType, bytes: raw.data)
+        } catch {
+            guard includeRaw else { throw error }
+            return rawReading(
+                raw: raw,
+                classification: classification,
+                timestamp: timestamp,
+                warnings: ["SMC decode failed: \(error)"]
+            )
+        }
 
         guard let value = decoded else {
             guard includeRaw else { return nil }
-            return Reading(
-                source: "smc",
-                identifier: raw.key,
-                label: classification.label,
-                category: classification.category,
-                kind: .rawContext,
-                value: .text(raw.data.map { String(format: "%02x", $0) }.joined()),
-                unit: nil,
+            return rawReading(
+                raw: raw,
+                classification: classification,
                 timestamp: timestamp,
-                classification: classification.classification,
-                metadata: ["smcStatus": .number(Double(raw.status))],
-                warnings: raw.status == 0 ? [] : ["SMC returned status \(raw.status)"],
-                rawDataType: raw.dataType,
-                rawBytes: raw.data
+                warnings: []
             )
         }
 
@@ -368,6 +370,33 @@ public struct SMCCollector: ThermalCollector {
             warnings: warnings,
             rawDataType: includeRaw ? raw.dataType : nil,
             rawBytes: includeRaw ? raw.data : nil
+        )
+    }
+
+    private static func rawReading(
+        raw: SMCRawRecord,
+        classification: SensorClassification,
+        timestamp: Date,
+        warnings: [String]
+    ) -> Reading {
+        var readingWarnings = warnings
+        if raw.status != 0 {
+            readingWarnings.append("SMC returned status \(raw.status)")
+        }
+        return Reading(
+            source: "smc",
+            identifier: raw.key,
+            label: classification.label,
+            category: classification.category,
+            kind: .rawContext,
+            value: .text(raw.data.map { String(format: "%02x", $0) }.joined()),
+            unit: nil,
+            timestamp: timestamp,
+            classification: classification.classification,
+            metadata: ["smcStatus": .number(Double(raw.status))],
+            warnings: readingWarnings,
+            rawDataType: raw.dataType,
+            rawBytes: raw.data
         )
     }
 

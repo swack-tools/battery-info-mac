@@ -45,7 +45,8 @@ public enum CaptureAggregator {
 
     public static func summarize(sample: ThermalSample) -> [SensorSummary] {
         var grouped: [ReadingCategory: [Double]] = [:]
-        for reading in sample.sources.flatMap(\.readings) where reading.kind == .temperature {
+        for reading in sample.sources.flatMap(\.readings)
+            where reading.kind == .temperature && reading.classification == .known {
             guard let value = reading.number else { continue }
             grouped[reading.category, default: []].append(value)
         }

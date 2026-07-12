@@ -34,6 +34,12 @@ typedef struct {
     int64_t value;
 } TPIOReportRecord;
 
+typedef struct {
+    int32_t process_id;
+    int32_t stdout_fd;
+    int32_t stderr_fd;
+} TPSpawnedProcess;
+
 int32_t tp_smc_copy_records(
     TPSMCRecord **records,
     size_t *count,
@@ -55,6 +61,17 @@ int32_t tp_ioreport_copy_records(
     char *error,
     size_t error_capacity
 );
+
+int32_t tp_spawn_process_group(
+    const char *executable,
+    char *const arguments[],
+    TPSpawnedProcess *process,
+    char *error,
+    size_t error_capacity
+);
+
+int32_t tp_wait_status_exit_code(int32_t status);
+int32_t tp_process_has_exited(int32_t process_id, int32_t *has_exited);
 
 void tp_free_records(void *records);
 

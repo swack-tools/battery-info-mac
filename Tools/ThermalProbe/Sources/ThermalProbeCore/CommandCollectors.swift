@@ -1,5 +1,20 @@
 import Foundation
 
+private func commandCapabilities(
+    _ base: [String: JSONValue] = [:],
+    result: CommandResult,
+    includeRaw: Bool
+) -> [String: JSONValue] {
+    guard includeRaw else { return base }
+    var capabilities = base
+    capabilities["rawStdout"] = .string(result.stdoutString)
+    capabilities["rawStderr"] = .string(result.stderrString)
+    capabilities["rawCommandExitStatus"] = .number(Double(result.terminationStatus))
+    capabilities["rawCommandTimedOut"] = .bool(result.timedOut)
+    capabilities["rawCommandTruncated"] = .bool(result.truncated)
+    return capabilities
+}
+
 public enum PMSetParser {
     public static func parse(_ output: String, timestamp: Date) -> [Reading] {
         let lines = output.split(whereSeparator: \.isNewline).map {
@@ -202,6 +217,7 @@ public enum PowermetricsParser {
 
     private static func mapPlist(path: String, value: JSONValue, timestamp: Date) -> Reading? {
         let lowered = path.lowercased()
+        let leaf = lowered.split(separator: ".").last.map(String.init) ?? lowered
         guard ["temp", "thermal", "pressure", "power", "limit", "forced", "sfi"]
             .contains(where: lowered.contains) else { return nil }
 
@@ -225,11 +241,17 @@ public enum PowermetricsParser {
                 mappedValue = .number(number)
                 unit = "%"
             } else if lowered.contains("power") {
-                kind = .power
-                if lowered.contains("_mw") || lowered.hasSuffix("mw") {
+                let milliwattFields = ["cpu_power", "gpu_power", "ane_power", "combined_power"]
+                if milliwattFields.contains(leaf) || leaf.hasSuffix("_mw") {
+                    kind = .power
                     mappedValue = .number(number / 1_000)
                     unit = "W"
+                } else if leaf.hasSuffix("_w") || leaf.hasSuffix("_watts") {
+                    kind = .power
+                    mappedValue = .number(number)
+                    unit = "W"
                 } else {
+                    kind = .rawContext
                     mappedValue = .number(number)
                     unit = nil
                 }
@@ -337,7 +359,12 @@ public struct PowermetricsCollector: ThermalCollector {
                     source: source,
                     startedAt: startedAt,
                     durationMilliseconds: elapsed(start, clock: context.clock),
-                    message: "powermetrics --help timed out"
+                    message: "powermetrics --help timed out",
+                    capabilities: commandCapabilities(
+                        ["phase": .string("help")],
+                        result: help,
+                        includeRaw: context.includeRaw
+                    )
                 )
             }
             guard help.terminationStatus == 0 else {
@@ -346,7 +373,12 @@ public struct PowermetricsCollector: ThermalCollector {
                     startedAt: startedAt,
                     durationMilliseconds: elapsed(start, clock: context.clock),
                     code: "powermetrics_help_failed",
-                    message: help.stderrString.isEmpty ? "exit \(help.terminationStatus)" : help.stderrString
+                    message: help.stderrString.isEmpty ? "exit \(help.terminationStatus)" : help.stderrString,
+                    capabilities: commandCapabilities(
+                        ["phase": .string("help")],
+                        result: help,
+                        includeRaw: context.includeRaw
+                    )
                 )
             }
 
@@ -360,14 +392,15 @@ public struct PowermetricsCollector: ThermalCollector {
                     durationMilliseconds: elapsed(start, clock: context.clock),
                     code: "no_supported_samplers",
                     message: "none of the requested thermal or power samplers are supported",
-                    capabilities: capabilities(supported: supported, requested: [])
+                    capabilities: commandCapabilities(
+                        capabilities(supported: supported, requested: []),
+                        result: help,
+                        includeRaw: context.includeRaw
+                    )
                 )
             }
 
             var warnings: [String] = []
-            if !supported.contains("smc") {
-                warnings.append("smc sampler is not supported by this powermetrics build")
-            }
 
             let baseArguments = [
                 "--samplers", requested.joined(separator: ","),
@@ -387,7 +420,11 @@ public struct PowermetricsCollector: ThermalCollector {
                     startedAt: startedAt,
                     durationMilliseconds: elapsed(start, clock: context.clock),
                     message: "powermetrics plist sample timed out",
-                    capabilities: capabilities(supported: supported, requested: requested)
+                    capabilities: commandCapabilities(
+                        capabilities(supported: supported, requested: requested),
+                        result: plistResult,
+                        includeRaw: context.includeRaw
+                    )
                 )
             }
 
@@ -410,7 +447,11 @@ public struct PowermetricsCollector: ThermalCollector {
                         startedAt: startedAt,
                         durationMilliseconds: elapsed(start, clock: context.clock),
                         message: "powermetrics text fallback timed out",
-                        capabilities: capabilities(supported: supported, requested: requested)
+                        capabilities: commandCapabilities(
+                            capabilities(supported: supported, requested: requested),
+                            result: textResult,
+                            includeRaw: context.includeRaw
+                        )
                     )
                 }
                 readings = PowermetricsParser.parseText(
@@ -427,6 +468,13 @@ public struct PowermetricsCollector: ThermalCollector {
             if finalResult.terminationStatus != 0 {
                 warnings.append("powermetrics exited with status \(finalResult.terminationStatus)")
             }
+            var sourceCapabilities = capabilities(supported: supported, requested: requested)
+            sourceCapabilities["format"] = .string(format)
+            sourceCapabilities = commandCapabilities(
+                sourceCapabilities,
+                result: finalResult,
+                includeRaw: context.includeRaw
+            )
             guard !readings.isEmpty || finalResult.terminationStatus == 0 else {
                 return .failed(
                     source: source,
@@ -437,16 +485,10 @@ public struct PowermetricsCollector: ThermalCollector {
                         ? "exit \(finalResult.terminationStatus)"
                         : finalResult.stderrString,
                     warnings: warnings,
-                    capabilities: capabilities(supported: supported, requested: requested)
+                    capabilities: sourceCapabilities
                 )
             }
 
-            var sourceCapabilities = capabilities(supported: supported, requested: requested)
-            sourceCapabilities["format"] = .string(format)
-            if context.includeRaw {
-                sourceCapabilities["rawStdout"] = .string(finalResult.stdoutString)
-                sourceCapabilities["rawStderr"] = .string(finalResult.stderrString)
-            }
             return .completed(
                 source: source,
                 startedAt: startedAt,
@@ -496,12 +538,17 @@ public struct PMSetCollector: ThermalCollector {
                 arguments: ["-g", "therm"],
                 timeout: 5
             )
+            let sourceCapabilities = commandCapabilities(
+                result: result,
+                includeRaw: context.includeRaw
+            )
             if result.timedOut {
                 return .timedOut(
                     source: source,
                     startedAt: startedAt,
                     durationMilliseconds: elapsed(start, clock: context.clock),
-                    message: "pmset -g therm timed out"
+                    message: "pmset -g therm timed out",
+                    capabilities: sourceCapabilities
                 )
             }
 
@@ -514,7 +561,8 @@ public struct PMSetCollector: ThermalCollector {
                     code: "pmset_failed",
                     message: result.stderrString.isEmpty
                         ? "exit \(result.terminationStatus)"
-                        : result.stderrString
+                        : result.stderrString,
+                    capabilities: sourceCapabilities
                 )
             }
 
@@ -522,18 +570,13 @@ public struct PMSetCollector: ThermalCollector {
             if result.terminationStatus != 0 {
                 warnings.append("pmset exited with status \(result.terminationStatus)")
             }
-            var capabilities: [String: JSONValue] = [:]
-            if context.includeRaw {
-                capabilities["rawStdout"] = .string(result.stdoutString)
-                capabilities["rawStderr"] = .string(result.stderrString)
-            }
             return .completed(
                 source: source,
                 startedAt: startedAt,
                 durationMilliseconds: elapsed(start, clock: context.clock),
                 readings: readings,
                 warnings: warnings,
-                capabilities: capabilities
+                capabilities: sourceCapabilities
             )
         } catch {
             return .failed(
@@ -582,12 +625,17 @@ public struct CapabilityProbeCollector: ThermalCollector {
         let start = context.clock.monotonicNow
         do {
             let result = try runner.run(executable: executable, arguments: arguments, timeout: 5)
+            let rawCapabilities = commandCapabilities(
+                result: result,
+                includeRaw: context.includeRaw
+            )
             if result.timedOut {
                 return .timedOut(
                     source: source,
                     startedAt: startedAt,
                     durationMilliseconds: elapsed(start, clock: context.clock),
-                    message: "\(source) capability probe timed out"
+                    message: "\(source) capability probe timed out",
+                    capabilities: rawCapabilities
                 )
             }
             let readings = parse(result: result, timestamp: context.clock.wallNow)
@@ -599,17 +647,16 @@ public struct CapabilityProbeCollector: ThermalCollector {
                     code: "capability_probe_failed",
                     message: result.stderrString.isEmpty
                         ? "exit \(result.terminationStatus)"
-                        : result.stderrString
+                        : result.stderrString,
+                    capabilities: rawCapabilities
                 )
             }
 
-            var capabilities: [String: JSONValue] = [
+            var capabilities: [String: JSONValue] = rawCapabilities
+            capabilities.merge([
                 "relevantFieldCount": .number(Double(readings.count)),
                 "exitStatus": .number(Double(result.terminationStatus))
-            ]
-            if context.includeRaw {
-                capabilities["rawStderr"] = .string(result.stderrString)
-            }
+            ]) { _, new in new }
             return .completed(
                 source: source,
                 startedAt: startedAt,

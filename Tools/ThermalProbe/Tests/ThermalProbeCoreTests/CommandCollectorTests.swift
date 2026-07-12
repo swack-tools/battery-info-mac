@@ -5,7 +5,7 @@ import XCTest
 final class CommandCollectorTests: XCTestCase {
     private let context = CollectionContext(clock: CommandFixedClock(), includeRaw: true)
 
-    func testPowermetricsIntersectsSamplersAndReportsMissingSMCSampler() throws {
+    func testPowermetricsTreatsMissingSMCSamplerAsCapabilityFact() throws {
         let plist = try PropertyListSerialization.data(
             fromPropertyList: ["thermal_pressure": "nominal", "cpu_power_mw": 900],
             format: .xml,
@@ -26,9 +26,9 @@ final class CommandCollectorTests: XCTestCase {
 
         let result = PowermetricsCollector(runner: runner).collect(context: context)
 
-        XCTAssertEqual(result.status, .partial)
+        XCTAssertEqual(result.status, .success)
         XCTAssertEqual(result.capabilities["smcSamplerAvailable"], .bool(false))
-        XCTAssertTrue(result.warnings.contains { $0.contains("smc sampler") })
+        XCTAssertFalse(result.warnings.contains { $0.contains("smc sampler") })
         XCTAssertEqual(result.readings.first { $0.identifier == "cpu_power_mw" }?.number, 0.9)
         let sampleArguments = try XCTUnwrap(runner.calls.last?.arguments)
         XCTAssertTrue(sampleArguments.contains("thermal,cpu_power,battery,sfi"))
@@ -80,6 +80,86 @@ final class CommandCollectorTests: XCTestCase {
         XCTAssertEqual(result.status, .success)
         XCTAssertTrue(result.readings.isEmpty)
         XCTAssertEqual(result.capabilities["relevantFieldCount"], .number(0))
+    }
+
+    func testCapabilityProbeRawModePreservesBothCommandStreams() {
+        let runner = FixtureCommandRunner(results: [
+            .fixture(stdout: "hw.model: Mac16,12\n", stderr: "fixture warning\n")
+        ])
+        let collector = CapabilityProbeCollector(
+            source: "sysctl",
+            executable: "/usr/sbin/sysctl",
+            arguments: ["-a"],
+            format: .keyValue,
+            runner: runner
+        )
+
+        let result = collector.collect(context: context)
+
+        XCTAssertEqual(result.capabilities["rawStdout"], .string("hw.model: Mac16,12\n"))
+        XCTAssertEqual(result.capabilities["rawStderr"], .string("fixture warning\n"))
+    }
+
+    func testCapabilityProbeRawModePreservesStreamsOnTimeout() {
+        let runner = FixtureCommandRunner(results: [
+            .fixture(stdout: "partial output", stderr: "timed out", timedOut: true)
+        ])
+        let collector = CapabilityProbeCollector(
+            source: "sysctl",
+            executable: "/usr/sbin/sysctl",
+            arguments: ["-a"],
+            format: .keyValue,
+            runner: runner
+        )
+
+        let result = collector.collect(context: context)
+
+        XCTAssertEqual(result.status, .timedOut)
+        XCTAssertEqual(result.capabilities["rawStdout"], .string("partial output"))
+        XCTAssertEqual(result.capabilities["rawStderr"], .string("timed out"))
+    }
+
+    func testPMSetRawModePreservesStreamsOnFailure() {
+        let runner = FixtureCommandRunner(results: [
+            .fixture(stdout: "partial output", stderr: "pmset failed", status: 2)
+        ])
+
+        let result = PMSetCollector(runner: runner).collect(context: context)
+
+        XCTAssertEqual(result.status, .failed)
+        XCTAssertEqual(result.capabilities["rawStdout"], .string("partial output"))
+        XCTAssertEqual(result.capabilities["rawStderr"], .string("pmset failed"))
+    }
+
+    func testPowermetricsRawModePreservesStreamsOnTimeout() {
+        let runner = FixtureCommandRunner(results: [
+            .fixture(stdout: """
+            The following samplers are supported by --samplers:
+                thermal           pressure
+            and the following sampler groups are supported by --samplers:
+            """),
+            .fixture(stdout: "partial plist", stderr: "sample timed out", timedOut: true)
+        ])
+
+        let result = PowermetricsCollector(runner: runner).collect(context: context)
+
+        XCTAssertEqual(result.status, .timedOut)
+        XCTAssertEqual(result.capabilities["rawStdout"], .string("partial plist"))
+        XCTAssertEqual(result.capabilities["rawStderr"], .string("sample timed out"))
+    }
+
+    func testPowermetricsRawModePreservesHelpWhenNoSamplerIsUsable() {
+        let runner = FixtureCommandRunner(results: [
+            .fixture(stdout: "powermetrics help without thermal samplers")
+        ])
+
+        let result = PowermetricsCollector(runner: runner).collect(context: context)
+
+        XCTAssertEqual(result.status, .unavailable)
+        XCTAssertEqual(
+            result.capabilities["rawStdout"],
+            .string("powermetrics help without thermal samplers")
+        )
     }
 }
 

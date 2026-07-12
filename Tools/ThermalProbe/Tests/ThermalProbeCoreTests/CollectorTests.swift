@@ -3,6 +3,13 @@ import XCTest
 @testable import ThermalProbeCore
 
 final class CollectorTests: XCTestCase {
+    func testSystemClockBuildsLargeSleepDurationWithoutUInt32Overflow() {
+        let duration = SystemProbeClock.sleepDuration(milliseconds: 5_000_001)
+
+        XCTAssertEqual(duration.tv_sec, 5_000)
+        XCTAssertEqual(duration.tv_nsec, 1_000_000)
+    }
+
     func testFailedCollectorDoesNotSuppressSuccessfulCollector() {
         let clock = FixedClock()
         let context = CollectionContext(clock: clock, includeRaw: false)

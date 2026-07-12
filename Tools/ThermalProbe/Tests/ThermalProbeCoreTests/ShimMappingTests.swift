@@ -42,6 +42,20 @@ final class ShimMappingTests: XCTestCase {
         XCTAssertEqual(reading.rawBytes, [0x41, 0x42])
     }
 
+    func testMalformedSMCRecordIsRetainedInRawMode() throws {
+        let raw = SMCRawRecord(key: "Tp01", dataType: "ui32", data: [0x01], status: 0)
+
+        let reading = try XCTUnwrap(
+            try SMCCollector.map(raw: raw, timestamp: .distantPast, includeRaw: true)
+        )
+
+        XCTAssertEqual(reading.kind, .rawContext)
+        XCTAssertEqual(reading.value, .text("01"))
+        XCTAssertEqual(reading.rawDataType, "ui32")
+        XCTAssertEqual(reading.rawBytes, [0x01])
+        XCTAssertTrue(reading.warnings.contains { $0.contains("decode") })
+    }
+
     func testImplausibleSMCTemperatureIsRetainedWithWarning() throws {
         let raw = SMCRawRecord(key: "Tp01", dataType: "sp78", data: [0xce, 0x00], status: 0)
         let reading = try XCTUnwrap(

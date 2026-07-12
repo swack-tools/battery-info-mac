@@ -84,7 +84,12 @@ private func run() -> Int32 {
                         printHumanHeader(record)
                         wroteHumanHeader = true
                     }
-                    StandardIO.writeOut(HumanRenderer.renderSample(record.sample))
+                    StandardIO.writeOut(
+                        HumanRenderer.renderSample(
+                            record.sample,
+                            includeRawMetadata: record.invocation.raw
+                        )
+                    )
                 case .jsonLines:
                     let encoded = try ProbeJSON.encoder.encode(StreamRecord(sample: record))
                     StandardIO.writeOut(encoded)

@@ -106,4 +106,30 @@ final class CommandParserTests: XCTestCase {
         XCTAssertEqual(readings.first { $0.identifier == "die_temperature_c" }?.kind, .temperature)
         XCTAssertEqual(readings.first { $0.identifier == "cpu_power_limit_percent" }?.kind, .powerLimit)
     }
+
+    func testPowermetricsPlistUsesMilliwattsForProcessorPowerFields() throws {
+        var input = try PropertyListSerialization.data(
+            fromPropertyList: [
+                "processor": [
+                    "gpu_power": 250.0,
+                    "cpu_power_zones_engaged": 3
+                ]
+            ],
+            format: .xml,
+            options: 0
+        )
+        input.append(0)
+
+        let readings = PowermetricsParser.parsePlist(input, timestamp: .distantPast)
+        let gpuPower = try XCTUnwrap(readings.first { $0.identifier == "processor.gpu_power" })
+        let zones = try XCTUnwrap(
+            readings.first { $0.identifier == "processor.cpu_power_zones_engaged" }
+        )
+
+        XCTAssertEqual(try XCTUnwrap(gpuPower.number), 0.25, accuracy: 0.001)
+        XCTAssertEqual(gpuPower.unit, "W")
+        XCTAssertEqual(gpuPower.kind, .power)
+        XCTAssertEqual(zones.kind, .rawContext)
+        XCTAssertNil(zones.unit)
+    }
 }

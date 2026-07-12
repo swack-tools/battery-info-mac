@@ -96,14 +96,18 @@ public struct IOReportCollector: ThermalCollector {
         let start = context.clock.monotonicNow
         do {
             let rawRecords = try provider.records(sampleMilliseconds: sampleMilliseconds)
-            let readings = rawRecords.map { Self.map($0, timestamp: context.clock.wallNow) }
+            let selectedRecords = context.includeRaw
+                ? rawRecords
+                : rawRecords.filter(Self.isRelevant)
+            let readings = selectedRecords.map { Self.map($0, timestamp: context.clock.wallNow) }
             return .completed(
                 source: source,
                 startedAt: startedAt,
                 durationMilliseconds: elapsed(start, clock: context.clock),
                 readings: readings,
                 capabilities: [
-                    "channelRecordCount": .number(Double(rawRecords.count)),
+                    "rawChannelRecordCount": .number(Double(rawRecords.count)),
+                    "emittedChannelRecordCount": .number(Double(selectedRecords.count)),
                     "sampleMilliseconds": .number(Double(sampleMilliseconds))
                 ]
             )
@@ -184,7 +188,7 @@ public struct IOReportCollector: ThermalCollector {
             "subgroup": .string(raw.subgroup),
             "channel": .string(raw.channel),
             "sampleMilliseconds": .number(Double(raw.sampleMilliseconds)),
-            "rawValue": .number(Double(raw.value))
+            "rawValue": .string(String(raw.value))
         ]
         if let state = raw.state {
             metadata["state"] = .string(state)
@@ -202,8 +206,22 @@ public struct IOReportCollector: ThermalCollector {
             timestamp: timestamp,
             classification: kind == .rawContext ? .unclassified : .heuristic,
             metadata: metadata,
-            warnings: warnings
+            warnings: warnings,
+            rawIntegerValue: raw.value
         )
+    }
+
+    private static func isRelevant(_ raw: IOReportRawRecord) -> Bool {
+        let group = raw.group.lowercased()
+        let searchable = [raw.group, raw.subgroup, raw.channel, raw.unit]
+            .joined(separator: " ")
+            .lowercased()
+        if ["energy model", "cpu stats", "gpu stats", "soc stats", "amc stats", "thermal"]
+            .contains(where: group.contains) {
+            return true
+        }
+        return ["thermal", "temperature", "temp", "power", "energy", "limit", "cpu", "gpu", "ane", "dram", "clpc"]
+            .contains(where: searchable.contains)
     }
 
     private func elapsed(_ start: TimeInterval, clock: any ProbeClock) -> Double {

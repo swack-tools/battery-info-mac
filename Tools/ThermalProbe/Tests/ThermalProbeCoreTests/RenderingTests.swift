@@ -47,4 +47,26 @@ final class RenderingTests: XCTestCase {
         XCTAssertTrue(output.contains("Tp01"))
         XCTAssertTrue(output.contains("40.00"))
     }
+
+    func testHumanRawOutputIncludesCapabilitiesMetadataAndPayload() {
+        var capture = ThermalFixtures.capture(sampleCount: 1)
+        capture.invocation.raw = true
+        capture.samples[0].sources[0].capabilities = [
+            "rawRecordCount": .number(1),
+            "resolved": .bool(true)
+        ]
+        capture.samples[0].sources[0].readings[0].metadata = [
+            "smcStatus": .number(0)
+        ]
+        capture.samples[0].sources[0].readings[0].rawDataType = "sp78"
+        capture.samples[0].sources[0].readings[0].rawBytes = [0x3d, 0x40]
+
+        let output = HumanRenderer.render(capture: capture)
+
+        XCTAssertTrue(output.contains("capability rawRecordCount: 1"))
+        XCTAssertTrue(output.contains("capability resolved: true"))
+        XCTAssertTrue(output.contains("metadata smcStatus: 0"))
+        XCTAssertTrue(output.contains("raw datatype: sp78"))
+        XCTAssertTrue(output.contains("raw bytes: 3d40"))
+    }
 }

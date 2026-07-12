@@ -4,11 +4,18 @@
 #include <IOKit/IOKitLib.h>
 #include <mach/mach.h>
 #include <dlfcn.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <math.h>
+#include <signal.h>
+#include <spawn.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/wait.h>
 #include <unistd.h>
+
+extern char **environ;
 
 #define TP_SMC_KERNEL_INDEX 2
 #define TP_SMC_READ_BYTES 5
@@ -76,6 +83,202 @@ static void tp_set_error(char *error, size_t capacity, const char *message) {
         return;
     }
     snprintf(error, capacity, "%s", message == NULL ? "unknown error" : message);
+}
+
+static void tp_close_pipe(int descriptors[2]) {
+    if (descriptors[0] >= 0) {
+        close(descriptors[0]);
+        descriptors[0] = -1;
+    }
+    if (descriptors[1] >= 0) {
+        close(descriptors[1]);
+        descriptors[1] = -1;
+    }
+}
+
+static int tp_configure_pipe_reader(int descriptor) {
+    if (fcntl(descriptor, F_SETFD, FD_CLOEXEC) != 0) {
+        return errno;
+    }
+    int flags = fcntl(descriptor, F_GETFL);
+    if (flags < 0 || fcntl(descriptor, F_SETFL, flags | O_NONBLOCK) != 0) {
+        return errno;
+    }
+    return 0;
+}
+
+static int tp_move_descriptor_above_stdio(int *descriptor) {
+    if (*descriptor > STDERR_FILENO) {
+        return 0;
+    }
+    int moved = fcntl(*descriptor, F_DUPFD_CLOEXEC, STDERR_FILENO + 1);
+    if (moved < 0) {
+        return errno;
+    }
+    close(*descriptor);
+    *descriptor = moved;
+    return 0;
+}
+
+int32_t tp_spawn_process_group(
+    const char *executable,
+    char *const arguments[],
+    TPSpawnedProcess *process,
+    char *error,
+    size_t error_capacity
+) {
+    if (executable == NULL || arguments == NULL || process == NULL) {
+        tp_set_error(error, error_capacity, "invalid process spawn arguments");
+        return EINVAL;
+    }
+
+    int stdout_pipe[2] = {-1, -1};
+    int stderr_pipe[2] = {-1, -1};
+    if (pipe(stdout_pipe) != 0 || pipe(stderr_pipe) != 0) {
+        int status = errno;
+        tp_close_pipe(stdout_pipe);
+        tp_close_pipe(stderr_pipe);
+        tp_set_error(error, error_capacity, strerror(status));
+        return status;
+    }
+    int pipe_status = tp_move_descriptor_above_stdio(&stdout_pipe[0]);
+    if (pipe_status == 0) {
+        pipe_status = tp_move_descriptor_above_stdio(&stdout_pipe[1]);
+    }
+    if (pipe_status == 0) {
+        pipe_status = tp_move_descriptor_above_stdio(&stderr_pipe[0]);
+    }
+    if (pipe_status == 0) {
+        pipe_status = tp_move_descriptor_above_stdio(&stderr_pipe[1]);
+    }
+    if (pipe_status == 0) {
+        pipe_status = tp_configure_pipe_reader(stdout_pipe[0]);
+    }
+    if (pipe_status == 0) {
+        pipe_status = tp_configure_pipe_reader(stderr_pipe[0]);
+    }
+    if (pipe_status != 0) {
+        tp_close_pipe(stdout_pipe);
+        tp_close_pipe(stderr_pipe);
+        tp_set_error(error, error_capacity, strerror(pipe_status));
+        return pipe_status;
+    }
+
+    posix_spawn_file_actions_t actions;
+    posix_spawnattr_t attributes;
+    int status = posix_spawn_file_actions_init(&actions);
+    int actions_initialized = status == 0;
+    int attributes_initialized = 0;
+    if (status == 0) {
+        status = posix_spawnattr_init(&attributes);
+        attributes_initialized = status == 0;
+    }
+    if (status == 0) {
+        status = posix_spawn_file_actions_adddup2(&actions, stdout_pipe[1], STDOUT_FILENO);
+    }
+    if (status == 0) {
+        status = posix_spawn_file_actions_adddup2(&actions, stderr_pipe[1], STDERR_FILENO);
+    }
+    if (status == 0) {
+        status = posix_spawn_file_actions_addclose(&actions, stdout_pipe[0]);
+    }
+    if (status == 0) {
+        status = posix_spawn_file_actions_addclose(&actions, stdout_pipe[1]);
+    }
+    if (status == 0) {
+        status = posix_spawn_file_actions_addclose(&actions, stderr_pipe[0]);
+    }
+    if (status == 0) {
+        status = posix_spawn_file_actions_addclose(&actions, stderr_pipe[1]);
+    }
+    sigset_t default_signals;
+    if (status == 0) {
+        if (sigemptyset(&default_signals) != 0
+            || sigaddset(&default_signals, SIGINT) != 0
+            || sigaddset(&default_signals, SIGTERM) != 0
+            || sigaddset(&default_signals, SIGHUP) != 0) {
+            status = errno;
+        }
+    }
+    if (status == 0) {
+        status = posix_spawnattr_setsigdefault(&attributes, &default_signals);
+    }
+    if (status == 0) {
+        status = posix_spawnattr_setflags(
+            &attributes,
+            POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_SETSIGDEF
+        );
+    }
+    if (status == 0) {
+        status = posix_spawnattr_setpgroup(&attributes, 0);
+    }
+
+    pid_t process_id = -1;
+    if (status == 0) {
+        status = posix_spawn(
+            &process_id,
+            executable,
+            &actions,
+            &attributes,
+            arguments,
+            environ
+        );
+    }
+
+    if (actions_initialized) {
+        posix_spawn_file_actions_destroy(&actions);
+    }
+    if (attributes_initialized) {
+        posix_spawnattr_destroy(&attributes);
+    }
+    close(stdout_pipe[1]);
+    stdout_pipe[1] = -1;
+    close(stderr_pipe[1]);
+    stderr_pipe[1] = -1;
+
+    if (status != 0) {
+        tp_close_pipe(stdout_pipe);
+        tp_close_pipe(stderr_pipe);
+        tp_set_error(error, error_capacity, strerror(status));
+        return status;
+    }
+
+    process->process_id = process_id;
+    process->stdout_fd = stdout_pipe[0];
+    process->stderr_fd = stderr_pipe[0];
+    return 0;
+}
+
+int32_t tp_wait_status_exit_code(int32_t status) {
+    if (WIFEXITED(status)) {
+        return WEXITSTATUS(status);
+    }
+    if (WIFSIGNALED(status)) {
+        return 128 + WTERMSIG(status);
+    }
+    return -1;
+}
+
+int32_t tp_process_has_exited(int32_t process_id, int32_t *has_exited) {
+    if (process_id <= 0 || has_exited == NULL) {
+        return EINVAL;
+    }
+    siginfo_t information;
+    int status;
+    do {
+        memset(&information, 0, sizeof(information));
+        status = waitid(
+            P_PID,
+            (id_t)process_id,
+            &information,
+            WEXITED | WNOHANG | WNOWAIT
+        );
+    } while (status != 0 && errno == EINTR);
+    if (status != 0) {
+        return errno;
+    }
+    *has_exited = information.si_pid == process_id ? 1 : 0;
+    return 0;
 }
 
 static uint32_t tp_fourcc(const char key[4]) {

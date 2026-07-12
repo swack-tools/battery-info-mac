@@ -74,13 +74,16 @@ public enum HumanRenderer {
             ""
         ]
         for sample in capture.samples {
-            lines.append(renderSample(sample))
+            lines.append(renderSample(sample, includeRawMetadata: capture.invocation.raw))
         }
         lines.append(renderSummary(aggregates: capture.aggregates, warnings: capture.warnings))
         return lines.joined(separator: "\n").trimmingCharacters(in: .newlines) + "\n"
     }
 
-    public static func renderSample(_ sample: ThermalSample) -> String {
+    public static func renderSample(
+        _ sample: ThermalSample,
+        includeRawMetadata: Bool = false
+    ) -> String {
         var lines = [
             "Sample \(sample.index + 1) @ \(ProbeJSON.format(date: sample.startedAt))",
             "Sources:"
@@ -100,6 +103,12 @@ public enum HumanRenderer {
             }
             for warning in source.warnings {
                 lines.append("    warning: \(warning)")
+            }
+            if includeRawMetadata {
+                for key in source.capabilities.keys.sorted() {
+                    guard let value = source.capabilities[key] else { continue }
+                    lines.append("    capability \(key): \(renderJSONValue(value))")
+                }
             }
         }
 
@@ -126,6 +135,22 @@ public enum HumanRenderer {
                 lines.append(
                     "  \(reading.category.rawValue)/\(reading.source) \(reading.identifier)\(label): \(value)"
                 )
+                if includeRawMetadata {
+                    for key in reading.metadata.keys.sorted() {
+                        guard let metadata = reading.metadata[key] else { continue }
+                        lines.append("    metadata \(key): \(renderJSONValue(metadata))")
+                    }
+                    if let rawDataType = reading.rawDataType {
+                        lines.append("    raw datatype: \(rawDataType)")
+                    }
+                    if let rawBytes = reading.rawBytes {
+                        let hexadecimal = rawBytes.map { String(format: "%02x", $0) }.joined()
+                        lines.append("    raw bytes: \(hexadecimal)")
+                    }
+                    if let rawIntegerValue = reading.rawIntegerValue {
+                        lines.append("    raw integer: \(rawIntegerValue)")
+                    }
+                }
                 for warning in reading.warnings {
                     lines.append("    warning: \(warning)")
                 }
@@ -195,5 +220,10 @@ public enum HumanRenderer {
                 return messages
             }
         } + capture.warnings
+    }
+
+    private static func renderJSONValue(_ value: JSONValue) -> String {
+        guard let data = try? ProbeJSON.encoder.encode(value) else { return "null" }
+        return String(decoding: data, as: UTF8.self)
     }
 }

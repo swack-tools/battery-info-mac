@@ -1,3 +1,4 @@
+import CThermalProbeShim
 import Darwin
 import Foundation
 
@@ -29,29 +30,38 @@ public final class ActiveProcessRegistry {
     public static let shared = ActiveProcessRegistry()
 
     private let lock = NSLock()
-    private var processes: [Int32: Process] = [:]
+    private var processGroups: Set<Int32> = []
 
     public init() {}
 
-    public func register(_ process: Process) {
+    func spawnAndRegister<T>(
+        _ spawn: () throws -> (processGroupID: Int32, value: T)
+    ) rethrows -> T {
         lock.lock()
-        processes[process.processIdentifier] = process
-        lock.unlock()
+        defer { lock.unlock() }
+        let spawned = try spawn()
+        processGroups.insert(spawned.processGroupID)
+        return spawned.value
     }
 
-    public func unregister(_ process: Process) {
+    func reapAndUnregister<T>(
+        processGroupID: Int32,
+        _ reap: () throws -> T
+    ) rethrows -> T {
         lock.lock()
-        processes.removeValue(forKey: process.processIdentifier)
-        lock.unlock()
+        defer {
+            processGroups.remove(processGroupID)
+            lock.unlock()
+        }
+        return try reap()
     }
 
     public func terminateAll() {
         lock.lock()
-        let active = Array(processes.values)
-        lock.unlock()
-
-        for process in active where process.isRunning {
-            process.terminate()
+        defer { lock.unlock() }
+        for processGroupID in processGroups where processGroupID > 0 {
+            Darwin.kill(-processGroupID, SIGTERM)
+            Darwin.kill(-processGroupID, SIGKILL)
         }
     }
 }
@@ -75,51 +85,79 @@ public final class ProcessCommandRunner: CommandRunning {
         arguments: [String],
         timeout: TimeInterval
     ) throws -> CommandResult {
-        let process = Process()
-        let stdoutPipe = Pipe()
-        let stderrPipe = Pipe()
         let accumulator = BoundedOutputAccumulator(maximumBytes: maximumBytes)
+        let drainControl = DrainControl()
         let readers = DispatchGroup()
-        let terminated = DispatchSemaphore(value: 0)
         let startedAt = Date()
         let monotonicStart = ProcessInfo.processInfo.systemUptime
+        let process = try registry.spawnAndRegister {
+            let process = try spawn(executable: executable, arguments: arguments)
+            return (processGroupID: process.process_id, value: process)
+        }
+        let processGroupID = process.process_id
 
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = arguments
-        process.standardOutput = stdoutPipe
-        process.standardError = stderrPipe
-        process.terminationHandler = { _ in terminated.signal() }
-
-        try process.run()
-        registry.register(process)
-
-        drain(stdoutPipe.fileHandleForReading, stream: .stdout, into: accumulator, group: readers)
-        drain(stderrPipe.fileHandleForReading, stream: .stderr, into: accumulator, group: readers)
+        drain(
+            process.stdout_fd,
+            stream: .stdout,
+            into: accumulator,
+            control: drainControl,
+            group: readers
+        )
+        drain(
+            process.stderr_fd,
+            stream: .stderr,
+            into: accumulator,
+            control: drainControl,
+            group: readers
+        )
 
         var timedOut = false
-        if terminated.wait(timeout: .now() + max(0, timeout)) == .timedOut {
+        var waitStatus: Int32 = 0
+        var waitError: Int32?
+        let deadline = monotonicStart + max(0, timeout)
+        switch waitUntilExit(processID: processGroupID, deadline: deadline) {
+        case .exited:
+            Darwin.kill(-processGroupID, SIGTERM)
+            Darwin.kill(-processGroupID, SIGKILL)
+        case .deadlineReached:
             timedOut = true
-            if process.isRunning {
-                process.terminate()
+            Darwin.kill(-processGroupID, SIGTERM)
+            switch waitUntilExit(
+                processID: processGroupID,
+                deadline: ProcessInfo.processInfo.systemUptime + 0.5
+            ) {
+            case .exited:
+                break
+            case .deadlineReached:
+                Darwin.kill(-processGroupID, SIGKILL)
+            case let .failed(code):
+                waitError = code
             }
-            if terminated.wait(timeout: .now() + 0.5) == .timedOut, process.isRunning {
-                kill(process.processIdentifier, SIGKILL)
-                _ = terminated.wait(timeout: .now() + 2)
-            }
+            Darwin.kill(-processGroupID, SIGKILL)
+        case let .failed(code):
+            waitError = code
+            Darwin.kill(-processGroupID, SIGKILL)
         }
 
-        if process.isRunning {
-            kill(process.processIdentifier, SIGKILL)
-            process.waitUntilExit()
+        let reapOutcome = registry.reapAndUnregister(processGroupID: processGroupID) {
+            waitForExit(processID: processGroupID)
         }
-        registry.unregister(process)
+        switch reapOutcome {
+        case let .reaped(status): waitStatus = status
+        case let .failed(code): waitError = waitError ?? code
+        }
+        drainControl.stop()
         readers.wait()
+
+        if let waitError {
+            throw posixError(waitError, operation: "waitpid")
+        }
 
         let captured = accumulator.snapshot()
         return CommandResult(
             executable: executable,
             arguments: arguments,
-            terminationStatus: process.terminationStatus,
+            terminationStatus: tp_wait_status_exit_code(waitStatus),
             stdout: captured.stdout,
             stderr: captured.stderr,
             timedOut: timedOut,
@@ -132,21 +170,151 @@ public final class ProcessCommandRunner: CommandRunning {
         )
     }
 
+    private enum ExitObservation {
+        case exited
+        case deadlineReached
+        case failed(Int32)
+    }
+
+    private enum ReapOutcome {
+        case reaped(Int32)
+        case failed(Int32)
+    }
+
+    private func spawn(executable: String, arguments: [String]) throws -> TPSpawnedProcess {
+        let command = [executable] + arguments
+        var allocatedArguments: [UnsafeMutablePointer<CChar>?] = command.map { value in
+            value.withCString { pointer in strdup(pointer) }
+        }
+        guard allocatedArguments.allSatisfy({ $0 != nil }) else {
+            allocatedArguments.forEach { pointer in
+                if let pointer { free(pointer) }
+            }
+            throw posixError(ENOMEM, operation: "strdup")
+        }
+        defer {
+            allocatedArguments.forEach { pointer in
+                if let pointer { free(pointer) }
+            }
+        }
+        allocatedArguments.append(nil)
+
+        var process = TPSpawnedProcess()
+        var errorBuffer = [CChar](repeating: 0, count: 512)
+        let status = executable.withCString { executablePointer in
+            allocatedArguments.withUnsafeMutableBufferPointer { argumentBuffer in
+                errorBuffer.withUnsafeMutableBufferPointer { errorPointer in
+                    tp_spawn_process_group(
+                        executablePointer,
+                        argumentBuffer.baseAddress,
+                        &process,
+                        errorPointer.baseAddress,
+                        errorPointer.count
+                    )
+                }
+            }
+        }
+        guard status == 0 else {
+            let message = errorBuffer.withUnsafeBufferPointer { buffer in
+                buffer.baseAddress.map(String.init(cString:)) ?? "process spawn failed"
+            }
+            throw NSError(
+                domain: NSPOSIXErrorDomain,
+                code: Int(status),
+                userInfo: [NSLocalizedDescriptionKey: message]
+            )
+        }
+        return process
+    }
+
+    private func waitUntilExit(processID: Int32, deadline: TimeInterval) -> ExitObservation {
+        while true {
+            switch pollExit(processID: processID) {
+            case .deadlineReached:
+                guard ProcessInfo.processInfo.systemUptime < deadline else {
+                    return .deadlineReached
+                }
+                usleep(5_000)
+            case let outcome:
+                return outcome
+            }
+        }
+    }
+
+    private func pollExit(processID: Int32) -> ExitObservation {
+        var hasExited: Int32 = 0
+        let status = tp_process_has_exited(processID, &hasExited)
+        if status != 0 { return .failed(status) }
+        return hasExited == 0 ? .deadlineReached : .exited
+    }
+
+    private func waitForExit(processID: Int32) -> ReapOutcome {
+        while true {
+            var status: Int32 = 0
+            let result = Darwin.waitpid(processID, &status, 0)
+            if result == processID { return .reaped(status) }
+            if result < 0, errno == EINTR { continue }
+            return .failed(errno)
+        }
+    }
+
+    private func posixError(_ code: Int32, operation: String) -> NSError {
+        NSError(
+            domain: NSPOSIXErrorDomain,
+            code: Int(code),
+            userInfo: [NSLocalizedDescriptionKey: "\(operation): \(String(cString: strerror(code)))"]
+        )
+    }
+
     private func drain(
-        _ handle: FileHandle,
+        _ descriptor: Int32,
         stream: BoundedOutputAccumulator.Stream,
         into accumulator: BoundedOutputAccumulator,
+        control: DrainControl,
         group: DispatchGroup
     ) {
         group.enter()
         DispatchQueue.global(qos: .utility).async {
-            defer { group.leave() }
+            defer {
+                Darwin.close(descriptor)
+                group.leave()
+            }
+            var buffer = [UInt8](repeating: 0, count: 8 * 1_024)
             while true {
-                let data = handle.availableData
-                guard !data.isEmpty else { return }
-                accumulator.append(data, stream: stream)
+                let count = buffer.withUnsafeMutableBytes { bytes in
+                    Darwin.read(descriptor, bytes.baseAddress, bytes.count)
+                }
+                if count > 0 {
+                    accumulator.append(Data(buffer.prefix(Int(count))), stream: stream)
+                } else if count == 0 {
+                    return
+                } else if errno == EINTR {
+                    continue
+                } else if errno == EAGAIN || errno == EWOULDBLOCK {
+                    if control.isStopped { return }
+                    usleep(1_000)
+                } else {
+                    return
+                }
             }
         }
+    }
+}
+
+private final class DrainControl {
+    private let lock = NSLock()
+    private var stopped = false
+
+    var isStopped: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return stopped
+    }
+
+    func stop() {
+        lock.lock()
+        stopped = true
+        lock.unlock()
     }
 }
 

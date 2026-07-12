@@ -52,4 +52,27 @@ final class AggregationTests: XCTestCase {
         XCTAssertEqual(summaries.count, 1)
         XCTAssertEqual(summaries[0].average, 40)
     }
+
+    func testSampleSummaryOnlyUsesKnownComponentTemperatures() {
+        var sample = ThermalFixtures.sample(index: 0, source: "smc", identifier: "Tp01", value: 40)
+        sample.sources[0].readings.append(
+            Reading(
+                source: "smc",
+                identifier: "TC0x",
+                label: nil,
+                category: .cpu,
+                kind: .temperature,
+                value: .number(100),
+                unit: "C",
+                timestamp: sample.startedAt,
+                classification: .heuristic
+            )
+        )
+
+        let summaries = CaptureAggregator.summarize(sample: sample)
+
+        XCTAssertEqual(summaries.count, 1)
+        XCTAssertEqual(summaries[0].average, 40)
+        XCTAssertEqual(summaries[0].count, 1)
+    }
 }

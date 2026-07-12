@@ -178,6 +178,7 @@ public struct Reading: Codable, Equatable {
     public var warnings: [String]
     public var rawDataType: String?
     public var rawBytes: [UInt8]?
+    public var rawIntegerValue: Int64?
 
     public init(
         source: String,
@@ -192,7 +193,8 @@ public struct Reading: Codable, Equatable {
         metadata: [String: JSONValue] = [:],
         warnings: [String] = [],
         rawDataType: String? = nil,
-        rawBytes: [UInt8]? = nil
+        rawBytes: [UInt8]? = nil,
+        rawIntegerValue: Int64? = nil
     ) {
         self.source = source
         self.identifier = identifier
@@ -207,6 +209,7 @@ public struct Reading: Codable, Equatable {
         self.warnings = warnings
         self.rawDataType = rawDataType
         self.rawBytes = rawBytes
+        self.rawIntegerValue = rawIntegerValue
     }
 
     public var number: Double? {

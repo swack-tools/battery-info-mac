@@ -15,7 +15,19 @@ public final class SystemProbeClock: ProbeClock {
 
     public func sleep(milliseconds: Int) {
         guard milliseconds > 0 else { return }
-        usleep(useconds_t(milliseconds) * 1_000)
+        var request = Self.sleepDuration(milliseconds: milliseconds)
+        var remainder = timespec()
+        while nanosleep(&request, &remainder) != 0, errno == EINTR {
+            request = remainder
+        }
+    }
+
+    static func sleepDuration(milliseconds: Int) -> timespec {
+        let bounded = max(0, milliseconds)
+        return timespec(
+            tv_sec: bounded / 1_000,
+            tv_nsec: (bounded % 1_000) * 1_000_000
+        )
     }
 }
 
