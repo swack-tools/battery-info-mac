@@ -267,6 +267,25 @@ final class HIDThermalCollectorTests: XCTestCase {
         XCTAssertEqual(missingSymbol.symbolRequests, ["MissingSymbol"])
     }
 
+    func testConcurrentRepeatedSymbolResolutionUsesOneStableLookup() throws {
+        let symbol = UnsafeMutableRawPointer(bitPattern: 0x1234)!
+        let backend = ConcurrentDynamicLibraryBackend(symbol: symbol)
+        let library = try DynamicSystemLibrary(source: "fixture", path: nil, backend: backend)
+        let results = ConcurrentResolutionResults()
+
+        DispatchQueue.concurrentPerform(iterations: 32) { _ in
+            do {
+                results.append(address: UInt(bitPattern: try library.rawSymbol(named: "StableSymbol")))
+            } catch {
+                results.append(error: String(describing: error))
+            }
+        }
+
+        XCTAssertEqual(results.errors, [])
+        XCTAssertEqual(results.addresses, Array(repeating: UInt(bitPattern: symbol), count: 32))
+        XCTAssertEqual(backend.symbolRequestCount, 1)
+    }
+
     func testInjectedHIDMissingSymbolMapsToUnavailableWithoutCallingHostAPI() throws {
         let backend = FixtureDynamicLibraryBackend(
             openResult: UnsafeMutableRawPointer(bitPattern: 1),
@@ -314,6 +333,202 @@ final class HIDThermalCollectorTests: XCTestCase {
         api = nil
         XCTAssertEqual(backend.closeCount, 1)
     }
+
+    func testLiveProviderUsesNumericLocationAndSensorIDsForStableIdentity() throws {
+        let backend = FixtureDynamicLibraryBackend(
+            openResult: UnsafeMutableRawPointer(bitPattern: 1),
+            symbols: hidCFixtureSymbols()
+        )
+        let library = try DynamicSystemLibrary(source: "iohid", path: "/fixture", backend: backend)
+        let provider = LiveHIDRecordProvider(libraryFactory: { library })
+
+        let batch = try provider.recordBatch()
+        let identifiers = try batch.records.map(HIDReadingMapper.map).map(\.identifier).sorted()
+
+        XCTAssertEqual(batch.records.map(\.product), ["CPU Temperature", "CPU Temperature"])
+        XCTAssertEqual(batch.records.map(\.location), ["101", "202"])
+        XCTAssertEqual(identifiers, [
+            "sensor:cpu-temperature:101",
+            "sensor:cpu-temperature:202"
+        ])
+    }
+}
+
+private final class ConcurrentResolutionResults: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedAddresses: [UInt] = []
+    private var storedErrors: [String] = []
+
+    var addresses: [UInt] {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedAddresses.sorted()
+    }
+
+    var errors: [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedErrors
+    }
+
+    func append(address: UInt) {
+        lock.lock()
+        storedAddresses.append(address)
+        lock.unlock()
+    }
+
+    func append(error: String) {
+        lock.lock()
+        storedErrors.append(error)
+        lock.unlock()
+    }
+}
+
+private final class ConcurrentDynamicLibraryBackend: DynamicLibraryBackend, @unchecked Sendable {
+    private let lock = NSLock()
+    private let resolvedSymbol: UnsafeMutableRawPointer
+    private var requests = 0
+
+    init(symbol: UnsafeMutableRawPointer) {
+        resolvedSymbol = symbol
+    }
+
+    var symbolRequestCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return requests
+    }
+
+    func open(path: String?, flags: Int32) -> UnsafeMutableRawPointer? {
+        _ = path
+        _ = flags
+        return UnsafeMutableRawPointer(bitPattern: 1)
+    }
+
+    func symbol(handle: UnsafeMutableRawPointer, name: String) -> UnsafeMutableRawPointer? {
+        _ = handle
+        _ = name
+        lock.lock()
+        defer { lock.unlock() }
+        requests += 1
+        usleep(2_000)
+        return resolvedSymbol
+    }
+
+    func close(handle: UnsafeMutableRawPointer) { _ = handle }
+    func errorMessage() -> String { "fixture error" }
+}
+
+private final class HIDCFixtureState: @unchecked Sendable {
+    static let shared = HIDCFixtureState()
+
+    let firstService = NSObject()
+    let secondService = NSObject()
+
+    func serviceIndex(_ pointer: UnsafeRawPointer?) -> Int? {
+        guard let pointer else { return nil }
+        if pointer == UnsafeRawPointer(Unmanaged.passUnretained(firstService).toOpaque()) {
+            return 0
+        }
+        if pointer == UnsafeRawPointer(Unmanaged.passUnretained(secondService).toOpaque()) {
+            return 1
+        }
+        return nil
+    }
+}
+
+private func hidCFixtureSymbols() -> [String: UnsafeMutableRawPointer] {
+    [
+        "IOHIDEventSystemClientCreate": unsafeBitCast(
+            hidFixtureCreateClient as HIDDynamicAPI.ClientCreate,
+            to: UnsafeMutableRawPointer.self
+        ),
+        "IOHIDEventSystemClientSetMatching": unsafeBitCast(
+            hidFixtureSetMatching as HIDDynamicAPI.SetMatching,
+            to: UnsafeMutableRawPointer.self
+        ),
+        "IOHIDEventSystemClientCopyServices": unsafeBitCast(
+            hidFixtureCopyServices as HIDDynamicAPI.CopyServices,
+            to: UnsafeMutableRawPointer.self
+        ),
+        "IOHIDServiceClientCopyProperty": unsafeBitCast(
+            hidFixtureCopyProperty as HIDDynamicAPI.CopyProperty,
+            to: UnsafeMutableRawPointer.self
+        ),
+        "IOHIDServiceClientCopyEvent": unsafeBitCast(
+            hidFixtureCopyEvent as HIDDynamicAPI.CopyEvent,
+            to: UnsafeMutableRawPointer.self
+        ),
+        "IOHIDEventGetFloatValue": unsafeBitCast(
+            hidFixtureGetFloatValue as HIDDynamicAPI.GetFloatValue,
+            to: UnsafeMutableRawPointer.self
+        )
+    ]
+}
+
+private func hidFixtureCreateClient(_ allocator: UnsafeRawPointer?) -> UnsafeMutableRawPointer? {
+    _ = allocator
+    return Unmanaged.passRetained(NSObject()).toOpaque()
+}
+
+private func hidFixtureSetMatching(
+    _ client: UnsafeMutableRawPointer?,
+    _ matching: UnsafeRawPointer?
+) -> Int32 {
+    _ = client
+    _ = matching
+    return 1
+}
+
+private func hidFixtureCopyServices(_ client: UnsafeMutableRawPointer?) -> UnsafeMutableRawPointer? {
+    _ = client
+    let state = HIDCFixtureState.shared
+    return Unmanaged.passRetained(NSArray(objects: state.firstService, state.secondService)).toOpaque()
+}
+
+private func hidFixtureCopyProperty(
+    _ service: UnsafeRawPointer?,
+    _ property: UnsafeRawPointer?
+) -> UnsafeMutableRawPointer? {
+    guard let property,
+          let serviceIndex = HIDCFixtureState.shared.serviceIndex(service) else {
+        return nil
+    }
+    let key = Unmanaged<CFString>
+        .fromOpaque(UnsafeMutableRawPointer(mutating: property))
+        .takeUnretainedValue() as String
+    let value: AnyObject?
+    switch (key, serviceIndex) {
+    case ("Product", _):
+        value = "CPU Temperature" as NSString
+    case ("LocationID", 0):
+        value = NSNumber(value: 101)
+    case ("SensorID", 1):
+        value = NSNumber(value: 202)
+    default:
+        value = nil
+    }
+    guard let value else { return nil }
+    return Unmanaged.passRetained(value).toOpaque()
+}
+
+private func hidFixtureCopyEvent(
+    _ service: UnsafeRawPointer?,
+    _ eventType: Int64,
+    _ options: Int32,
+    _ timeout: Int64
+) -> UnsafeMutableRawPointer? {
+    _ = service
+    _ = eventType
+    _ = options
+    _ = timeout
+    return Unmanaged.passRetained(NSObject()).toOpaque()
+}
+
+private func hidFixtureGetFloatValue(_ event: UnsafeRawPointer?, _ field: Int32) -> Double {
+    _ = event
+    _ = field
+    return 50
 }
 
 private struct FixtureHIDProvider: HIDRecordProviding {

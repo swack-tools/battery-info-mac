@@ -48,6 +48,7 @@ final class DynamicSystemLibrary: @unchecked Sendable {
     private let pathDescription: String
     private let backend: any DynamicLibraryBackend
     private let handle: UnsafeMutableRawPointer
+    private let symbolLock = NSLock()
     private var symbols: [String: Result<UnsafeMutableRawPointer, DynamicSystemLibraryError>] = [:]
 
     init(
@@ -73,6 +74,8 @@ final class DynamicSystemLibrary: @unchecked Sendable {
     }
 
     func rawSymbol(named name: String) throws -> UnsafeMutableRawPointer {
+        symbolLock.lock()
+        defer { symbolLock.unlock() }
         if let result = symbols[name] {
             return try result.get()
         }

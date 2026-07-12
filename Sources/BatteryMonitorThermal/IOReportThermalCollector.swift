@@ -48,6 +48,7 @@ struct IOReportScanAccumulator {
     private static let maximumWarnings = 20
     private(set) var records: [IOReportRawRecord] = []
     private(set) var scannedCount = 0
+    private(set) var observedStateCount = 0
     private var warnings: [String] = []
     private var omittedWarningCount = 0
 
@@ -58,12 +59,12 @@ struct IOReportScanAccumulator {
 
     mutating func recordChannel(
         base: IOReportRawRecord,
-        states: [IOReportRawRecord],
+        observedStateCount: Int,
         warnings: [String] = []
     ) {
         scannedCount += 1
+        self.observedStateCount += observedStateCount
         records.append(base)
-        records.append(contentsOf: states)
         warnings.forEach { appendWarning($0) }
     }
 
@@ -162,6 +163,23 @@ enum IOReportReadingMapper {
         if value.contains("dram") || value.contains("memory") { return .memory }
         if value.contains("nand") || value.contains("storage") || value.contains("ssd") { return .storage }
         return .system
+    }
+}
+
+struct IOReportMappedRecord {
+    var raw: IOReportRawRecord
+    var reading: DetailedThermalReading
+}
+
+enum IOReportBatchMapper {
+    static func map(
+        _ records: [IOReportRawRecord],
+        using mapper: (IOReportRawRecord) -> DetailedThermalReading?
+    ) -> [IOReportMappedRecord] {
+        records.compactMap { raw in
+            guard let reading = mapper(raw) else { return nil }
+            return IOReportMappedRecord(raw: raw, reading: reading)
+        }
     }
 }
 
@@ -276,18 +294,24 @@ public struct LiveIOReportRecordProvider: IOReportRecordProviding {
             throw IOReportProviderError(kind: .failed, message: "IOReport subscription could not be created")
         }
         defer { Unmanaged<CFTypeRef>.fromOpaque(subscription).release() }
-        if let subscriptionInfo {
-            Unmanaged<CFTypeRef>.fromOpaque(subscriptionInfo).release()
+        guard let subscribedChannelsPointer = subscriptionInfo else {
+            throw IOReportProviderError(
+                kind: .failed,
+                message: "IOReport subscription returned no subscribed channel descriptor"
+            )
         }
 
-        guard let first = api.createSamples(subscription, channelsPointer, nil) else {
+        guard let first = api.createSamples(subscription, subscribedChannelsPointer, nil) else {
+            Unmanaged<CFTypeRef>.fromOpaque(subscribedChannelsPointer).release()
             throw IOReportProviderError(kind: .failed, message: "IOReport first sample could not be created")
         }
         sleeper(sampleMilliseconds)
-        guard let second = api.createSamples(subscription, channelsPointer, nil) else {
+        guard let second = api.createSamples(subscription, subscribedChannelsPointer, nil) else {
             Unmanaged<CFTypeRef>.fromOpaque(first).release()
+            Unmanaged<CFTypeRef>.fromOpaque(subscribedChannelsPointer).release()
             throw IOReportProviderError(kind: .failed, message: "IOReport second sample could not be created")
         }
+        Unmanaged<CFTypeRef>.fromOpaque(subscribedChannelsPointer).release()
         let delta = api.createSamplesDelta(first, second, nil)
         Unmanaged<CFTypeRef>.fromOpaque(first).release()
         Unmanaged<CFTypeRef>.fromOpaque(second).release()
@@ -338,25 +362,19 @@ public struct LiveIOReportRecordProvider: IOReportRecordProviding {
             )
 
             let stateCount = api.stateCount(channel)
-            var states: [IOReportRawRecord] = []
             var channelWarnings: [String] = []
+            let observedStateCount: Int
             if (0...4096).contains(stateCount) {
-                states.reserveCapacity(Int(stateCount))
-                for stateIndex in 0..<stateCount {
-                    states.append(IOReportRawRecord(
-                        group: group,
-                        subgroup: subgroup,
-                        channel: name,
-                        unit: unit,
-                        state: string(api.stateName(channel, stateIndex)),
-                        stateIndex: stateIndex,
-                        value: api.stateResidency(channel, stateIndex)
-                    ))
-                }
+                observedStateCount = Int(stateCount)
             } else {
+                observedStateCount = 0
                 channelWarnings.append("IOReport channel \(index): invalid state count \(stateCount)")
             }
-            accumulator.recordChannel(base: base, states: states, warnings: channelWarnings)
+            accumulator.recordChannel(
+                base: base,
+                observedStateCount: observedStateCount,
+                warnings: channelWarnings
+            )
         }
         return accumulator.batch()
     }
@@ -396,12 +414,15 @@ public struct IOReportThermalCollector: ThermalCollector {
                     start: start
                 )
             }
-            let readings = batch.records.compactMap(IOReportReadingMapper.map)
+            let mappedRecords = IOReportBatchMapper.map(
+                batch.records,
+                using: IOReportReadingMapper.map
+            )
+            let readings = mappedRecords.map(\.reading)
             var warnings = batch.warnings
-            for (record, reading) in zip(batch.records, batch.records.map(IOReportReadingMapper.map)) {
-                guard let reading else { continue }
-                warnings.append(contentsOf: reading.warnings.map {
-                    "IOReport \(IOReportRecordIdentity.identifier(for: record)): \($0)"
+            for mappedRecord in mappedRecords {
+                warnings.append(contentsOf: mappedRecord.reading.warnings.map {
+                    "IOReport \(IOReportRecordIdentity.identifier(for: mappedRecord.raw)): \($0)"
                 })
             }
             return .completed(

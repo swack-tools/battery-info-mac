@@ -244,7 +244,13 @@ public struct LiveHIDRecordProvider: HIDRecordProviding {
     }
 
     private func stringProperty(_ name: String, service: UnsafeRawPointer, api: HIDDynamicAPI) -> String? {
-        copiedProperty(name, service: service, api: api) as? String
+        guard let property = copiedProperty(name, service: service, api: api) else {
+            return nil
+        }
+        if let string = property as? String {
+            return string
+        }
+        return (property as? NSNumber)?.stringValue
     }
 
     private func integerProperty(_ name: String, service: UnsafeRawPointer, api: HIDDynamicAPI) -> UInt64? {

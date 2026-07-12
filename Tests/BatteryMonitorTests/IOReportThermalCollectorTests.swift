@@ -138,19 +138,32 @@ final class IOReportThermalCollectorTests: XCTestCase {
         XCTAssertEqual(result.status.warnings, [])
     }
 
-    func testScanAccumulatorCountsChannelOnceWhenStatesExpandRecords() {
-        let base = record(group: "CPU Stats", channel: "CPU Residency", unit: "ns")
-        let states = [
-            record(group: "CPU Stats", channel: "CPU Residency", unit: "ns", state: "P0", stateIndex: 0),
-            record(group: "CPU Stats", channel: "CPU Residency", unit: "ns", state: "P1", stateIndex: 1)
+    func testBatchMapperInvokesMapperOncePerBaseRecord() {
+        let records = [
+            record(group: "Thermal", channel: "CPU Temperature", unit: "C"),
+            record(group: "CPU Stats", channel: "CPU Power", unit: "mW")
         ]
+        var invocationCount = 0
+
+        let mapped = IOReportBatchMapper.map(records) { record in
+            invocationCount += 1
+            return IOReportReadingMapper.map(record)
+        }
+
+        XCTAssertEqual(invocationCount, 2)
+        XCTAssertEqual(mapped.map(\.reading.identifier), ["Thermal/CPU Temperature"])
+    }
+
+    func testScanAccumulatorCountsChannelOnceWithoutMaterializingStates() {
+        let base = record(group: "CPU Stats", channel: "CPU Residency", unit: "ns")
         var accumulator = IOReportScanAccumulator()
 
-        accumulator.recordChannel(base: base, states: states)
+        accumulator.recordChannel(base: base, observedStateCount: 2)
         let batch = accumulator.batch()
 
-        XCTAssertEqual(batch.records.count, 3)
+        XCTAssertEqual(batch.records, [base])
         XCTAssertEqual(batch.scannedCount, 1)
+        XCTAssertEqual(accumulator.observedStateCount, 2)
     }
 
     func testAllMalformedScanRetainsAttemptCountAndBoundedWarningsInFailedStatus() {
@@ -288,6 +301,70 @@ final class IOReportThermalCollectorTests: XCTestCase {
         XCTAssertEqual(backend.closeCount, 1)
     }
 
+    func testLiveProviderSamplesWithSubscribedDescriptorAndReleasesOwnedObjects() throws {
+        IOReportCFixtureState.shared.reset(emitSubscribedDescriptor: true)
+        let backend = IOReportFixtureDynamicLibraryBackend(symbols: ioReportCFixtureSymbols())
+        let library = try DynamicSystemLibrary(source: "ioreport", path: "/fixture", backend: backend)
+        let provider = LiveIOReportRecordProvider(
+            libraryFactory: { library },
+            sleeper: { _ in }
+        )
+
+        let batch = try provider.recordBatch(sampleMilliseconds: 1)
+        let snapshot = IOReportCFixtureState.shared.snapshot()
+
+        XCTAssertEqual(batch.records.map(\.channel), ["CPU Temperature"])
+        XCTAssertEqual(snapshot.sampleDescriptorAddresses, [
+            snapshot.subscribedDescriptorAddress,
+            snapshot.subscribedDescriptorAddress
+        ])
+        XCTAssertEqual(snapshot.descriptorAliveDuringSamples, [true, true])
+        XCTAssertFalse(snapshot.subscribedDescriptorIsAlive)
+        XCTAssertFalse(snapshot.subscriptionIsAlive)
+    }
+
+    func testLiveProviderObservesButDoesNotMaterializeStateRows() throws {
+        IOReportCFixtureState.shared.reset(emitSubscribedDescriptor: true, stateCount: 3)
+        let backend = IOReportFixtureDynamicLibraryBackend(symbols: ioReportCFixtureSymbols())
+        let library = try DynamicSystemLibrary(source: "ioreport", path: "/fixture", backend: backend)
+        let provider = LiveIOReportRecordProvider(
+            libraryFactory: { library },
+            sleeper: { _ in }
+        )
+
+        let batch = try provider.recordBatch(sampleMilliseconds: 1)
+        let snapshot = IOReportCFixtureState.shared.snapshot()
+
+        XCTAssertEqual(batch.records.map(\.channel), ["CPU Temperature"])
+        XCTAssertEqual(batch.scannedCount, 1)
+        XCTAssertEqual(snapshot.stateCountCalls, 1)
+        XCTAssertEqual(snapshot.stateNameCalls, 0)
+        XCTAssertEqual(snapshot.stateResidencyCalls, 0)
+    }
+
+    func testLiveProviderFailsAndCleansUpWhenSubscriptionOmitsDescriptor() throws {
+        IOReportCFixtureState.shared.reset(emitSubscribedDescriptor: false)
+        let backend = IOReportFixtureDynamicLibraryBackend(symbols: ioReportCFixtureSymbols())
+        let library = try DynamicSystemLibrary(source: "ioreport", path: "/fixture", backend: backend)
+        let provider = LiveIOReportRecordProvider(
+            libraryFactory: { library },
+            sleeper: { _ in XCTFail("missing descriptor must fail before sleeping") }
+        )
+
+        XCTAssertThrowsError(try provider.recordBatch(sampleMilliseconds: 1)) { error in
+            XCTAssertEqual(
+                error as? IOReportProviderError,
+                IOReportProviderError(
+                    kind: .failed,
+                    message: "IOReport subscription returned no subscribed channel descriptor"
+                )
+            )
+        }
+        let snapshot = IOReportCFixtureState.shared.snapshot()
+        XCTAssertEqual(snapshot.sampleDescriptorAddresses, [])
+        XCTAssertFalse(snapshot.subscriptionIsAlive)
+    }
+
     private func record(
         group: String,
         subgroup: String = "",
@@ -307,6 +384,263 @@ final class IOReportThermalCollectorTests: XCTestCase {
             value: value
         )
     }
+}
+
+private struct IOReportCFixtureSnapshot {
+    var subscribedDescriptorAddress: UInt?
+    var sampleDescriptorAddresses: [UInt?]
+    var descriptorAliveDuringSamples: [Bool]
+    var subscribedDescriptorIsAlive: Bool
+    var subscriptionIsAlive: Bool
+    var stateCountCalls: Int
+    var stateNameCalls: Int
+    var stateResidencyCalls: Int
+}
+
+private final class IOReportCFixtureState: @unchecked Sendable {
+    static let shared = IOReportCFixtureState()
+
+    private let lock = NSLock()
+    private var emitSubscribedDescriptor = true
+    private var subscribedDescriptorAddress: UInt?
+    private var sampleDescriptorAddresses: [UInt?] = []
+    private var descriptorAliveDuringSamples: [Bool] = []
+    private weak var subscribedDescriptor: AnyObject?
+    private weak var subscription: AnyObject?
+    private var returnedStateCount: Int32 = 0
+    private var stateCountCalls = 0
+    private var stateNameCalls = 0
+    private var stateResidencyCalls = 0
+    let group = "Thermal" as NSString
+    let subgroup = "CPU" as NSString
+    let channel = "CPU Temperature" as NSString
+    let unit = "C" as NSString
+
+    func reset(emitSubscribedDescriptor: Bool, stateCount: Int32 = 0) {
+        lock.lock()
+        defer { lock.unlock() }
+        self.emitSubscribedDescriptor = emitSubscribedDescriptor
+        subscribedDescriptorAddress = nil
+        sampleDescriptorAddresses = []
+        descriptorAliveDuringSamples = []
+        subscribedDescriptor = nil
+        subscription = nil
+        returnedStateCount = stateCount
+        stateCountCalls = 0
+        stateNameCalls = 0
+        stateResidencyCalls = 0
+    }
+
+    func configureSubscription(
+        output: UnsafeMutablePointer<UnsafeMutableRawPointer?>?
+    ) -> UnsafeMutableRawPointer {
+        let subscription = NSObject()
+        lock.lock()
+        self.subscription = subscription
+        let shouldEmit = emitSubscribedDescriptor
+        lock.unlock()
+
+        if shouldEmit {
+            let descriptor = NSMutableDictionary()
+            let pointer = Unmanaged.passRetained(descriptor).toOpaque()
+            lock.lock()
+            subscribedDescriptor = descriptor
+            subscribedDescriptorAddress = UInt(bitPattern: pointer)
+            lock.unlock()
+            output?.pointee = pointer
+        }
+        return Unmanaged.passRetained(subscription).toOpaque()
+    }
+
+    func recordSample(descriptor: UnsafeMutableRawPointer?) {
+        lock.lock()
+        defer { lock.unlock() }
+        sampleDescriptorAddresses.append(descriptor.map(UInt.init(bitPattern:)))
+        descriptorAliveDuringSamples.append(subscribedDescriptor != nil)
+    }
+
+    func recordStateCount() -> Int32 {
+        lock.lock()
+        defer { lock.unlock() }
+        stateCountCalls += 1
+        return returnedStateCount
+    }
+
+    func recordStateName() {
+        lock.lock()
+        stateNameCalls += 1
+        lock.unlock()
+    }
+
+    func recordStateResidency() {
+        lock.lock()
+        stateResidencyCalls += 1
+        lock.unlock()
+    }
+
+    func snapshot() -> IOReportCFixtureSnapshot {
+        lock.lock()
+        defer { lock.unlock() }
+        return IOReportCFixtureSnapshot(
+            subscribedDescriptorAddress: subscribedDescriptorAddress,
+            sampleDescriptorAddresses: sampleDescriptorAddresses,
+            descriptorAliveDuringSamples: descriptorAliveDuringSamples,
+            subscribedDescriptorIsAlive: subscribedDescriptor != nil,
+            subscriptionIsAlive: subscription != nil,
+            stateCountCalls: stateCountCalls,
+            stateNameCalls: stateNameCalls,
+            stateResidencyCalls: stateResidencyCalls
+        )
+    }
+}
+
+private func ioReportCFixtureSymbols() -> [String: UnsafeMutableRawPointer] {
+    [
+        "IOReportCopyAllChannels": unsafeBitCast(
+            ioReportFixtureCopyAllChannels as IOReportAPI.CopyAllChannels,
+            to: UnsafeMutableRawPointer.self
+        ),
+        "IOReportCreateSubscription": unsafeBitCast(
+            ioReportFixtureCreateSubscription as IOReportAPI.CreateSubscription,
+            to: UnsafeMutableRawPointer.self
+        ),
+        "IOReportCreateSamples": unsafeBitCast(
+            ioReportFixtureCreateSamples as IOReportAPI.CreateSamples,
+            to: UnsafeMutableRawPointer.self
+        ),
+        "IOReportCreateSamplesDelta": unsafeBitCast(
+            ioReportFixtureCreateSamplesDelta as IOReportAPI.CreateSamplesDelta,
+            to: UnsafeMutableRawPointer.self
+        ),
+        "IOReportChannelGetGroup": unsafeBitCast(
+            ioReportFixtureChannelGroup as IOReportAPI.ChannelString,
+            to: UnsafeMutableRawPointer.self
+        ),
+        "IOReportChannelGetSubGroup": unsafeBitCast(
+            ioReportFixtureChannelSubgroup as IOReportAPI.ChannelString,
+            to: UnsafeMutableRawPointer.self
+        ),
+        "IOReportChannelGetChannelName": unsafeBitCast(
+            ioReportFixtureChannelName as IOReportAPI.ChannelString,
+            to: UnsafeMutableRawPointer.self
+        ),
+        "IOReportChannelGetUnitLabel": unsafeBitCast(
+            ioReportFixtureChannelUnit as IOReportAPI.ChannelString,
+            to: UnsafeMutableRawPointer.self
+        ),
+        "IOReportSimpleGetIntegerValue": unsafeBitCast(
+            ioReportFixtureSimpleValue as IOReportAPI.SimpleValue,
+            to: UnsafeMutableRawPointer.self
+        ),
+        "IOReportStateGetCount": unsafeBitCast(
+            ioReportFixtureStateCount as IOReportAPI.StateCount,
+            to: UnsafeMutableRawPointer.self
+        ),
+        "IOReportStateGetNameForIndex": unsafeBitCast(
+            ioReportFixtureStateName as IOReportAPI.StateName,
+            to: UnsafeMutableRawPointer.self
+        ),
+        "IOReportStateGetResidency": unsafeBitCast(
+            ioReportFixtureStateResidency as IOReportAPI.StateResidency,
+            to: UnsafeMutableRawPointer.self
+        )
+    ]
+}
+
+private func ioReportFixtureCopyAllChannels(
+    _ options: UInt64,
+    _ channelType: UInt64
+) -> UnsafeMutableRawPointer? {
+    _ = options
+    _ = channelType
+    return Unmanaged.passRetained(NSMutableDictionary()).toOpaque()
+}
+
+private func ioReportFixtureCreateSubscription(
+    _ allocator: UnsafeRawPointer?,
+    _ channels: UnsafeMutableRawPointer?,
+    _ subscribedChannels: UnsafeMutablePointer<UnsafeMutableRawPointer?>?,
+    _ options: UInt64,
+    _ callback: UnsafeRawPointer?
+) -> UnsafeMutableRawPointer? {
+    _ = allocator
+    _ = channels
+    _ = options
+    _ = callback
+    return IOReportCFixtureState.shared.configureSubscription(output: subscribedChannels)
+}
+
+private func ioReportFixtureCreateSamples(
+    _ subscription: UnsafeRawPointer?,
+    _ subscribedChannels: UnsafeMutableRawPointer?,
+    _ options: UnsafeRawPointer?
+) -> UnsafeMutableRawPointer? {
+    _ = subscription
+    _ = options
+    IOReportCFixtureState.shared.recordSample(descriptor: subscribedChannels)
+    return Unmanaged.passRetained(NSMutableDictionary()).toOpaque()
+}
+
+private func ioReportFixtureCreateSamplesDelta(
+    _ first: UnsafeRawPointer?,
+    _ second: UnsafeRawPointer?,
+    _ options: UnsafeRawPointer?
+) -> UnsafeMutableRawPointer? {
+    _ = first
+    _ = second
+    _ = options
+    let channel = NSMutableDictionary()
+    let delta = NSMutableDictionary()
+    delta["IOReportChannels"] = [channel]
+    return Unmanaged.passRetained(delta).toOpaque()
+}
+
+private func ioReportFixtureChannelGroup(_ channel: UnsafeRawPointer?) -> UnsafeMutableRawPointer? {
+    _ = channel
+    return Unmanaged.passUnretained(IOReportCFixtureState.shared.group).toOpaque()
+}
+
+private func ioReportFixtureChannelSubgroup(_ channel: UnsafeRawPointer?) -> UnsafeMutableRawPointer? {
+    _ = channel
+    return Unmanaged.passUnretained(IOReportCFixtureState.shared.subgroup).toOpaque()
+}
+
+private func ioReportFixtureChannelName(_ channel: UnsafeRawPointer?) -> UnsafeMutableRawPointer? {
+    _ = channel
+    return Unmanaged.passUnretained(IOReportCFixtureState.shared.channel).toOpaque()
+}
+
+private func ioReportFixtureChannelUnit(_ channel: UnsafeRawPointer?) -> UnsafeMutableRawPointer? {
+    _ = channel
+    return Unmanaged.passUnretained(IOReportCFixtureState.shared.unit).toOpaque()
+}
+
+private func ioReportFixtureSimpleValue(_ channel: UnsafeRawPointer?, _ index: Int32) -> Int64 {
+    _ = channel
+    _ = index
+    return 52
+}
+
+private func ioReportFixtureStateCount(_ channel: UnsafeRawPointer?) -> Int32 {
+    _ = channel
+    return IOReportCFixtureState.shared.recordStateCount()
+}
+
+private func ioReportFixtureStateName(
+    _ channel: UnsafeRawPointer?,
+    _ index: Int32
+) -> UnsafeMutableRawPointer? {
+    _ = channel
+    _ = index
+    IOReportCFixtureState.shared.recordStateName()
+    return nil
+}
+
+private func ioReportFixtureStateResidency(_ channel: UnsafeRawPointer?, _ index: Int32) -> Int64 {
+    _ = channel
+    _ = index
+    IOReportCFixtureState.shared.recordStateResidency()
+    return 0
 }
 
 private struct FixtureIOReportProvider: IOReportRecordProviding {
