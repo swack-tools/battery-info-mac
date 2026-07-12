@@ -75,4 +75,27 @@ final class ProjectStructureTests: XCTestCase {
         XCTAssertTrue(source.contains("info.detailedThermalReadings"))
         XCTAssertTrue(source.contains("info.thermalSourceStatuses"))
     }
+
+    func testUndocumentedLifetimeEnergyPathIsRemoved() throws {
+        let data = try String(
+            contentsOf: repoRoot.appendingPathComponent("Sources/BatteryMonitor/BatteryData.swift")
+        )
+        let iokit = try String(
+            contentsOf: repoRoot.appendingPathComponent("Sources/BatteryMonitor/IOKitBattery.swift")
+        )
+        let display = try String(
+            contentsOf: repoRoot.appendingPathComponent("Sources/BatteryMonitor/BatteryDisplayInfo.swift")
+        )
+        let view = try String(
+            contentsOf: repoRoot.appendingPathComponent("Sources/BatteryMonitor/BatteryDetailView.swift")
+        )
+
+        for source in [data, iokit, display, view] {
+            XCTAssertFalse(source.contains("AccumulatedSystemEnergyConsumed"))
+            XCTAssertFalse(source.contains("accumulatedSystemEnergy"))
+            XCTAssertFalse(source.contains("lifetimeEnergyKWh"))
+            XCTAssertFalse(source.contains("Lifetime Energy"))
+        }
+        XCTAssertTrue(view.contains("Estimated Battery Throughput"))
+    }
 }

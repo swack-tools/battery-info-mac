@@ -949,8 +949,8 @@ struct AdvancedDiagnosticsSection: View {
                     InfoRow(label: "Shipping Mode", value: shipping, valueColor: .secondary)
                 }
 
-                if let energy = info.lifetimeEnergy {
-                    InfoRow(label: "Lifetime Energy", value: energy, valueColor: .orange)
+                if let throughput = info.estimatedBatteryThroughput {
+                    InfoRow(label: "Estimated Battery Throughput", value: throughput, valueColor: .orange)
                 }
 
                 if let wait = info.postChargeWait {
