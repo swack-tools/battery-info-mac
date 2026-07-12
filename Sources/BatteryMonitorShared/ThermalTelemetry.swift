@@ -87,6 +87,8 @@ public struct ThermalSnapshot: Codable, Equatable, Sendable {
     public var throttling: ThrottlingStatus
     public var thermalPressure: String?
     public var messages: [String]
+    public var detailedReadings: [DetailedThermalReading]
+    public var sourceStatuses: [ThermalSourceStatus]
 
     public init(
         generatedAt: Date,
@@ -94,7 +96,9 @@ public struct ThermalSnapshot: Codable, Equatable, Sendable {
         componentPowers: [ComponentPowerReading] = [],
         throttling: ThrottlingStatus = .nominal(source: "unknown"),
         thermalPressure: String? = nil,
-        messages: [String] = []
+        messages: [String] = [],
+        detailedReadings: [DetailedThermalReading] = [],
+        sourceStatuses: [ThermalSourceStatus] = []
     ) {
         self.generatedAt = generatedAt
         self.thermalReadings = thermalReadings
@@ -102,6 +106,49 @@ public struct ThermalSnapshot: Codable, Equatable, Sendable {
         self.throttling = throttling
         self.thermalPressure = thermalPressure
         self.messages = messages
+        self.detailedReadings = detailedReadings
+        self.sourceStatuses = sourceStatuses
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case generatedAt
+        case thermalReadings
+        case componentPowers
+        case throttling
+        case thermalPressure
+        case messages
+        case detailedReadings
+        case sourceStatuses
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        generatedAt = try container.decode(Date.self, forKey: .generatedAt)
+        thermalReadings = try container.decode([ThermalReading].self, forKey: .thermalReadings)
+        componentPowers = try container.decode([ComponentPowerReading].self, forKey: .componentPowers)
+        throttling = try container.decode(ThrottlingStatus.self, forKey: .throttling)
+        thermalPressure = try container.decodeIfPresent(String.self, forKey: .thermalPressure)
+        messages = try container.decode([String].self, forKey: .messages)
+        detailedReadings = try container.decodeIfPresent(
+            [DetailedThermalReading].self,
+            forKey: .detailedReadings
+        ) ?? []
+        sourceStatuses = try container.decodeIfPresent(
+            [ThermalSourceStatus].self,
+            forKey: .sourceStatuses
+        ) ?? []
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(generatedAt, forKey: .generatedAt)
+        try container.encode(thermalReadings, forKey: .thermalReadings)
+        try container.encode(componentPowers, forKey: .componentPowers)
+        try container.encode(throttling, forKey: .throttling)
+        try container.encodeIfPresent(thermalPressure, forKey: .thermalPressure)
+        try container.encode(messages, forKey: .messages)
+        try container.encode(detailedReadings, forKey: .detailedReadings)
+        try container.encode(sourceStatuses, forKey: .sourceStatuses)
     }
 }
 
@@ -138,27 +185,40 @@ public enum PMSetThermalParser {
 
 public enum PowermetricsThermalParser {
     public static func parse(_ output: String, generatedAt: Date = Date()) -> ThermalSnapshot {
-        var powers: [ComponentPowerReading] = []
+        var powersByName: [String: ComponentPowerReading] = [:]
+        var powerNames: [String] = []
         var readings: [ThermalReading] = []
         var thermalPressure: String?
         var powerLimitPercentages: [Int] = []
         var forcedIdlePercentages: [Int] = []
+
+        func record(_ power: ComponentPowerReading) {
+            if !powerNames.contains(power.name) {
+                powerNames.append(power.name)
+            }
+
+            if let existing = powersByName[power.name],
+               existing.watts > 0,
+               power.watts == 0 {
+                return
+            }
+
+            powersByName[power.name] = power
+        }
 
         for rawLine in output.components(separatedBy: .newlines) {
             let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
             let lowercased = line.lowercased()
 
             if let power = parseComponentPower(line) {
-                powers.append(power)
+                record(power)
             }
 
             if let reading = parseTemperature(line) {
                 readings.append(reading)
             }
 
-            if lowercased.contains("thermal pressure"),
-               let pressure = line.components(separatedBy: ":").last?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !pressure.isEmpty {
+            if let pressure = parseThermalPressure(line) {
                 thermalPressure = normalizedLevelName(pressure)
             }
 
@@ -182,7 +242,7 @@ public enum PowermetricsThermalParser {
         return ThermalSnapshot(
             generatedAt: generatedAt,
             thermalReadings: readings,
-            componentPowers: powers,
+            componentPowers: powerNames.compactMap { powersByName[$0] },
             throttling: ThrottlingStatus(
                 level: level(for: throttlingPercentage, pressure: thermalPressure?.lowercased() ?? ""),
                 percentage: throttlingPercentage,
@@ -211,21 +271,72 @@ public enum PowermetricsThermalParser {
 
     private static func parseTemperature(_ line: String) -> ThermalReading? {
         let lowercased = line.lowercased()
-        guard lowercased.contains("temperature") else { return nil }
-
-        let parts = line.components(separatedBy: ":")
-        guard parts.count >= 2,
-              let valueRange = parts[1].range(of: #"-?[0-9]+(\.[0-9]+)?"#, options: .regularExpression),
-              let celsius = Double(parts[1][valueRange]) else {
+        guard !lowercased.contains("power") else { return nil }
+        guard let valueRange = line.range(
+            of: #"-?[0-9]+(\.[0-9]+)?\s*(°\s*)?(c|celsius)\b"#,
+            options: [.regularExpression, .caseInsensitive]
+        ) else {
             return nil
         }
 
-        let rawName = parts[0]
+        let valueText = String(line[valueRange])
+        guard let numberRange = valueText.range(of: #"-?[0-9]+(\.[0-9]+)?"#, options: .regularExpression),
+              let celsius = Double(valueText[numberRange]) else {
+            return nil
+        }
+
+        let rawPrefix = String(line[..<valueRange.lowerBound])
+        let rawName = rawPrefix
             .replacingOccurrences(of: "temperature", with: "", options: .caseInsensitive)
+            .replacingOccurrences(of: "temp", with: "", options: .caseInsensitive)
+            .replacingOccurrences(of: ":", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard lowercased.contains("temperature")
+            || lowercased.contains("temp")
+            || isLikelyThermalSensorName(rawName) else {
+            return nil
+        }
 
         let name = normalizedSensorName(rawName.isEmpty ? "Thermal Sensor" : rawName)
         return ThermalReading(name: name, celsius: celsius, source: "powermetrics")
+    }
+
+    private static func parseThermalPressure(_ line: String) -> String? {
+        let lowercased = line.lowercased()
+        guard lowercased.contains("thermal pressure"),
+              let separator = line.firstIndex(of: ":") else {
+            return nil
+        }
+
+        let pressure = line[line.index(after: separator)...]
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "*"))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !pressure.isEmpty,
+              !pressure.lowercased().contains("thermal pressure") else {
+            return nil
+        }
+
+        return pressure
+    }
+
+    private static func isLikelyThermalSensorName(_ name: String) -> Bool {
+        let normalized = name.lowercased()
+        let thermalTerms = [
+            "cpu",
+            "gpu",
+            "ane",
+            "dram",
+            "memory",
+            "ssd",
+            "storage",
+            "soc",
+            "die",
+            "proximity"
+        ]
+        return thermalTerms.contains { normalized.contains($0) }
     }
 }
 
