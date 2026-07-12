@@ -677,14 +677,8 @@ class IOKitBattery {
             data.designCycleCount = designCycles
         }
 
-        // PowerTelemetryData - real-time power metrics and accumulated energy
+        // PowerTelemetryData - real-time power metrics
         if let ptd = firstDictionary("PowerTelemetryData") {
-            // Accumulated system energy (for lifetime energy calculation)
-            // IORegistry stores as NSNumber, need to extract as Int64
-            if let energyNum = ptd["AccumulatedSystemEnergyConsumed"] as? NSNumber {
-                data.accumulatedSystemEnergy = energyNum.int64Value
-            }
-
             // Real-time adapter voltage and current (from SystemVoltageIn/SystemCurrentIn)
             if let adapterVoltage = ptd["SystemVoltageIn"] as? Int {
                 data.adapterVoltage = Double(adapterVoltage) / 1000.0  // mV to V
