@@ -51,4 +51,17 @@ final class ProjectStructureTests: XCTestCase {
         XCTAssertTrue(view.contains("Toggle(PrivilegedHelperControlState.toggleTitle"))
         XCTAssertTrue(manager.contains("Run as root at startup"))
     }
+
+    func testAdvancedThermalsImmediatelyFollowsGeneralThermals() throws {
+        let source = try String(
+            contentsOf: repoRoot.appendingPathComponent("Sources/BatteryMonitor/BatteryDetailView.swift")
+        )
+        let general = try XCTUnwrap(source.range(of: "GeneralThermalsSection(info:"))
+        let advanced = try XCTUnwrap(source.range(of: "ThermalsAdvancedSection(info:"))
+
+        XCTAssertLessThan(general.lowerBound, advanced.lowerBound)
+        XCTAssertTrue(source.contains("struct ThermalsAdvancedSection: View"))
+        XCTAssertTrue(source.contains("info.detailedThermalReadings"))
+        XCTAssertTrue(source.contains("info.thermalSourceStatuses"))
+    }
 }
