@@ -20,6 +20,13 @@ let package = Package(
         .target(
             name: "BatteryMonitorShared"
         ),
+        .target(
+            name: "BatteryMonitorThermal",
+            dependencies: ["BatteryMonitorShared"],
+            linkerSettings: [
+                .linkedFramework("IOKit")
+            ]
+        ),
         // GUI Menu Bar App
         .executableTarget(
             name: "BatteryMonitor",
@@ -36,11 +43,11 @@ let package = Package(
         ),
         .executableTarget(
             name: "BatteryMonitorPrivilegedHelper",
-            dependencies: ["BatteryMonitorShared"]
+            dependencies: ["BatteryMonitorShared", "BatteryMonitorThermal"]
         ),
         .testTarget(
             name: "BatteryMonitorTests",
-            dependencies: ["BatteryMonitor", "BatteryMonitorShared"]
+            dependencies: ["BatteryMonitor", "BatteryMonitorShared", "BatteryMonitorThermal"]
         )
     ]
 )
