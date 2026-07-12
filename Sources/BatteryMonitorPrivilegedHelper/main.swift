@@ -47,11 +47,15 @@ guard getuid() == 0 || helperArguments.allowNonRootForFixture else {
 }
 
 let coordinator = ThermalCaptureCoordinator.default
+let snapshotWriter = AtomicThermalSnapshotWriter()
 
 repeat {
     do {
         let snapshot = coordinator.collect(generatedAt: Date())
-        try write(snapshot: snapshot, to: URL(fileURLWithPath: helperArguments.outputPath))
+        try snapshotWriter.write(
+            snapshot: snapshot,
+            to: URL(fileURLWithPath: helperArguments.outputPath)
+        )
     } catch {
         fputs("BatteryMonitorPrivilegedHelper failed: \(error)\n", stderr)
         if helperArguments.runOnce {
@@ -65,27 +69,3 @@ repeat {
 
     sleep(helperArguments.interval)
 } while true
-
-private func write(snapshot: ThermalSnapshot, to url: URL) throws {
-    let directory = url.deletingLastPathComponent()
-    try FileManager.default.createDirectory(
-        at: directory,
-        withIntermediateDirectories: true,
-        attributes: [.posixPermissions: 0o755]
-    )
-
-    let encoder = JSONEncoder()
-    encoder.dateEncodingStrategy = .iso8601
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-
-    let data = try encoder.encode(snapshot)
-    let temporaryURL = directory.appendingPathComponent(".\(url.lastPathComponent).tmp")
-    try data.write(to: temporaryURL, options: .atomic)
-
-    if FileManager.default.fileExists(atPath: url.path) {
-        try FileManager.default.removeItem(at: url)
-    }
-
-    try FileManager.default.moveItem(at: temporaryURL, to: url)
-    try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: url.path)
-}

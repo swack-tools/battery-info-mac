@@ -178,6 +178,54 @@ final class ThermalCaptureCoordinatorTests: XCTestCase {
     }
 }
 
+final class AtomicThermalSnapshotWriterTests: XCTestCase {
+    func testExistingSnapshotIsAtomicallyReplacedWithPublicReadPermissions() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let destination = directory.appendingPathComponent("thermal.json")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try Data("old snapshot".utf8).write(to: destination)
+        let snapshot = ThermalSnapshot(generatedAt: Date(timeIntervalSince1970: 42))
+
+        try AtomicThermalSnapshotWriter().write(snapshot: snapshot, to: destination)
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        XCTAssertEqual(
+            try decoder.decode(ThermalSnapshot.self, from: Data(contentsOf: destination)),
+            snapshot
+        )
+        let attributes = try FileManager.default.attributesOfItem(atPath: destination.path)
+        XCTAssertEqual((attributes[.posixPermissions] as? NSNumber)?.intValue, 0o644)
+        XCTAssertFalse(try FileManager.default.contentsOfDirectory(atPath: directory.path)
+            .contains { $0.hasSuffix(".tmp") })
+    }
+
+    func testRenameFailureLeavesExistingSnapshotAndCleansTemporaryFile() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let destination = directory.appendingPathComponent("thermal.json")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let oldData = Data("old snapshot".utf8)
+        try oldData.write(to: destination)
+        let writer = AtomicThermalSnapshotWriter { _, _ in throw RenameFailure.expected }
+
+        XCTAssertThrowsError(try writer.write(
+            snapshot: ThermalSnapshot(generatedAt: .distantPast),
+            to: destination
+        ))
+        XCTAssertEqual(try Data(contentsOf: destination), oldData)
+        XCTAssertEqual(
+            try FileManager.default.contentsOfDirectory(atPath: directory.path),
+            [destination.lastPathComponent]
+        )
+    }
+}
+
+private enum RenameFailure: Error { case expected }
+
 private struct FixtureThermalCollector: ThermalCollector {
     var source: String
     var result: ThermalCollectionResult

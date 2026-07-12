@@ -1,9 +1,68 @@
 import BatteryMonitorShared
+import Darwin
 import Foundation
 
 public protocol ThermalCollector: Sendable {
     var source: String { get }
     func collect(at timestamp: Date) throws -> ThermalCollectionResult
+}
+
+public struct AtomicThermalSnapshotWriter {
+    typealias Renamer = (URL, URL) throws -> Void
+    private let renamer: Renamer
+
+    public init() {
+        renamer = Self.renameReplacingDestination
+    }
+
+    init(renamer: @escaping Renamer) {
+        self.renamer = renamer
+    }
+
+    public func write(snapshot: ThermalSnapshot, to destination: URL) throws {
+        let directory = destination.deletingLastPathComponent()
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o755]
+        )
+
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(snapshot)
+        let temporary = directory.appendingPathComponent(
+            ".\(destination.lastPathComponent).\(UUID().uuidString).tmp"
+        )
+        defer { try? FileManager.default.removeItem(at: temporary) }
+
+        try data.write(to: temporary)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o644],
+            ofItemAtPath: temporary.path
+        )
+        try renamer(temporary, destination)
+    }
+
+    private static func renameReplacingDestination(_ source: URL, _ destination: URL) throws {
+        let result = source.path.withCString { sourcePath in
+            destination.path.withCString { destinationPath in
+                Darwin.rename(sourcePath, destinationPath)
+            }
+        }
+        guard result == 0 else {
+            let code = errno
+            throw NSError(
+                domain: NSPOSIXErrorDomain,
+                code: Int(code),
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "rename \(source.lastPathComponent) to \(destination.lastPathComponent): "
+                        + String(cString: strerror(code))
+                ]
+            )
+        }
+    }
 }
 
 public struct ThermalCaptureCoordinator: Sendable {
