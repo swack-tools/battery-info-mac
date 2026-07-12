@@ -138,32 +138,44 @@ final class IOReportThermalCollectorTests: XCTestCase {
         XCTAssertEqual(result.status.warnings, [])
     }
 
-    func testNativeBatchCountsChannelEntriesRatherThanExpandedStateRecords() {
-        let records = [
-            record(group: "CPU Stats", channel: "CPU Residency", unit: "ns"),
+    func testScanAccumulatorCountsChannelOnceWhenStatesExpandRecords() {
+        let base = record(group: "CPU Stats", channel: "CPU Residency", unit: "ns")
+        let states = [
             record(group: "CPU Stats", channel: "CPU Residency", unit: "ns", state: "P0", stateIndex: 0),
             record(group: "CPU Stats", channel: "CPU Residency", unit: "ns", state: "P1", stateIndex: 1)
         ]
+        var accumulator = IOReportScanAccumulator()
 
-        let batch = IOReportRecordBatch.nativeScan(
-            records: records,
-            channelEntryCount: 1
-        )
+        accumulator.recordChannel(base: base, states: states)
+        let batch = accumulator.batch()
 
         XCTAssertEqual(batch.records.count, 3)
         XCTAssertEqual(batch.scannedCount, 1)
     }
 
-    func testNativeBatchCountsMalformedChannelEntriesAsScanned() {
-        let batch = IOReportRecordBatch.nativeScan(
-            records: [record(group: "Thermal", channel: "CPU Temperature", unit: "C")],
-            channelEntryCount: 2,
-            warnings: ["IOReport channel 1: record is not a dictionary"]
-        )
+    func testAllMalformedScanRetainsAttemptCountAndBoundedWarningsInFailedStatus() {
+        var accumulator = IOReportScanAccumulator()
+        for index in 0..<25 {
+            accumulator.recordMalformedEntry(
+                warning: "IOReport channel \(index): record is not a dictionary"
+            )
+        }
+        let batch = accumulator.batch()
 
-        XCTAssertEqual(batch.records.count, 1)
-        XCTAssertEqual(batch.scannedCount, 2)
-        XCTAssertEqual(batch.warnings, ["IOReport channel 1: record is not a dictionary"])
+        XCTAssertEqual(batch.records, [])
+        XCTAssertEqual(batch.scannedCount, 25)
+        XCTAssertEqual(batch.warnings.count, 20)
+        XCTAssertEqual(batch.warnings.first, "IOReport channel 0: record is not a dictionary")
+        XCTAssertEqual(batch.warnings.last, "6 additional IOReport warnings omitted")
+
+        let result = IOReportThermalCollector(provider: FixtureIOReportProvider(batch: batch))
+            .collect(at: .distantPast)
+
+        XCTAssertEqual(result.readings, [])
+        XCTAssertEqual(result.status.state, .failed)
+        XCTAssertEqual(result.status.scannedRecordCount, 25)
+        XCTAssertEqual(result.status.warnings, batch.warnings)
+        XCTAssertEqual(result.status.error, "IOReport returned no channel records")
     }
 
     func testInjectedBatchWarningsProduceBoundedPartialStatus() {

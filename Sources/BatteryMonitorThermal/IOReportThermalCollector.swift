@@ -42,16 +42,54 @@ public struct IOReportRecordBatch: Equatable, Sendable {
         self.warnings = warnings
     }
 
-    static func nativeScan(
-        records: [IOReportRawRecord],
-        channelEntryCount: Int,
+}
+
+struct IOReportScanAccumulator {
+    private static let maximumWarnings = 20
+    private(set) var records: [IOReportRawRecord] = []
+    private(set) var scannedCount = 0
+    private var warnings: [String] = []
+    private var omittedWarningCount = 0
+
+    mutating func recordMalformedEntry(warning: String) {
+        scannedCount += 1
+        appendWarning(warning)
+    }
+
+    mutating func recordChannel(
+        base: IOReportRawRecord,
+        states: [IOReportRawRecord],
         warnings: [String] = []
-    ) -> IOReportRecordBatch {
-        IOReportRecordBatch(
+    ) {
+        scannedCount += 1
+        records.append(base)
+        records.append(contentsOf: states)
+        warnings.forEach { appendWarning($0) }
+    }
+
+    func batch() -> IOReportRecordBatch {
+        var boundedWarnings = warnings
+        if omittedWarningCount > 0 {
+            boundedWarnings.append("\(omittedWarningCount) additional IOReport warnings omitted")
+        }
+        return IOReportRecordBatch(
             records: records,
-            scannedCount: channelEntryCount,
-            warnings: warnings
+            scannedCount: scannedCount,
+            warnings: boundedWarnings
         )
+    }
+
+    private mutating func appendWarning(_ warning: String) {
+        if omittedWarningCount > 0 {
+            omittedWarningCount += 1
+            return
+        }
+        if warnings.count < Self.maximumWarnings {
+            warnings.append(warning)
+            return
+        }
+        warnings.removeLast()
+        omittedWarningCount = 2
     }
 }
 
@@ -269,16 +307,19 @@ public struct LiveIOReportRecordProvider: IOReportRecordProviding {
 
         let channelArray = Unmanaged<CFArray>.fromOpaque(arrayPointer).takeUnretainedValue()
         let channelCount = CFArrayGetCount(channelArray)
-        var records: [IOReportRawRecord] = []
-        var warnings: [String] = []
+        var accumulator = IOReportScanAccumulator()
         for index in 0..<channelCount {
             guard let channel = CFArrayGetValueAtIndex(channelArray, index) else {
-                warnings.append("IOReport channel \(index): channel reference unavailable")
+                accumulator.recordMalformedEntry(
+                    warning: "IOReport channel \(index): channel reference unavailable"
+                )
                 continue
             }
             let value = Unmanaged<CFTypeRef>.fromOpaque(channel).takeUnretainedValue()
             guard CFGetTypeID(value) == CFDictionaryGetTypeID() else {
-                warnings.append("IOReport channel \(index): record is not a dictionary")
+                accumulator.recordMalformedEntry(
+                    warning: "IOReport channel \(index): record is not a dictionary"
+                )
                 continue
             }
 
@@ -286,7 +327,7 @@ public struct LiveIOReportRecordProvider: IOReportRecordProviding {
             let subgroup = string(api.channelSubgroup(channel))
             let name = string(api.channelName(channel))
             let unit = string(api.channelUnit(channel))
-            records.append(IOReportRawRecord(
+            let base = IOReportRawRecord(
                 group: group,
                 subgroup: subgroup,
                 channel: name,
@@ -294,33 +335,30 @@ public struct LiveIOReportRecordProvider: IOReportRecordProviding {
                 state: nil,
                 stateIndex: -1,
                 value: api.simpleValue(channel, 0)
-            ))
+            )
 
             let stateCount = api.stateCount(channel)
-            guard (0...4096).contains(stateCount) else {
-                warnings.append("IOReport channel \(index): invalid state count \(stateCount)")
-                continue
+            var states: [IOReportRawRecord] = []
+            var channelWarnings: [String] = []
+            if (0...4096).contains(stateCount) {
+                states.reserveCapacity(Int(stateCount))
+                for stateIndex in 0..<stateCount {
+                    states.append(IOReportRawRecord(
+                        group: group,
+                        subgroup: subgroup,
+                        channel: name,
+                        unit: unit,
+                        state: string(api.stateName(channel, stateIndex)),
+                        stateIndex: stateIndex,
+                        value: api.stateResidency(channel, stateIndex)
+                    ))
+                }
+            } else {
+                channelWarnings.append("IOReport channel \(index): invalid state count \(stateCount)")
             }
-            for stateIndex in 0..<stateCount {
-                records.append(IOReportRawRecord(
-                    group: group,
-                    subgroup: subgroup,
-                    channel: name,
-                    unit: unit,
-                    state: string(api.stateName(channel, stateIndex)),
-                    stateIndex: stateIndex,
-                    value: api.stateResidency(channel, stateIndex)
-                ))
-            }
+            accumulator.recordChannel(base: base, states: states, warnings: channelWarnings)
         }
-        guard !records.isEmpty else {
-            throw IOReportProviderError(kind: .failed, message: "IOReport returned no channel records")
-        }
-        return .nativeScan(
-            records: records,
-            channelEntryCount: channelCount,
-            warnings: warnings
-        )
+        return accumulator.batch()
     }
 
     private func string(_ pointer: UnsafeMutableRawPointer?) -> String {
