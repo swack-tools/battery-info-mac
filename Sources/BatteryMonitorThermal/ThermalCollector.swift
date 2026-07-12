@@ -9,10 +9,22 @@ public protocol ThermalCollector: Sendable {
 public struct ThermalCollectionResult: Sendable {
     public var readings: [DetailedThermalReading]
     public var status: ThermalSourceStatus
+    public var componentPowers: [ComponentPowerReading]
+    public var throttling: ThrottlingStatus?
+    public var thermalPressure: String?
 
-    public init(readings: [DetailedThermalReading], status: ThermalSourceStatus) {
+    public init(
+        readings: [DetailedThermalReading],
+        status: ThermalSourceStatus,
+        componentPowers: [ComponentPowerReading] = [],
+        throttling: ThrottlingStatus? = nil,
+        thermalPressure: String? = nil
+    ) {
         self.readings = readings
         self.status = status
+        self.componentPowers = componentPowers
+        self.throttling = throttling
+        self.thermalPressure = thermalPressure
     }
 
     public static func completed(
@@ -20,7 +32,10 @@ public struct ThermalCollectionResult: Sendable {
         readings: [DetailedThermalReading],
         durationMilliseconds: Double,
         warnings: [String] = [],
-        scannedRecordCount: Int? = nil
+        scannedRecordCount: Int? = nil,
+        componentPowers: [ComponentPowerReading] = [],
+        throttling: ThrottlingStatus? = nil,
+        thermalPressure: String? = nil
     ) -> ThermalCollectionResult {
         ThermalCollectionResult(
             readings: readings,
@@ -31,7 +46,10 @@ public struct ThermalCollectionResult: Sendable {
                 durationMilliseconds: durationMilliseconds,
                 warnings: warnings,
                 scannedRecordCount: scannedRecordCount
-            )
+            ),
+            componentPowers: componentPowers,
+            throttling: throttling,
+            thermalPressure: thermalPressure
         )
     }
 
