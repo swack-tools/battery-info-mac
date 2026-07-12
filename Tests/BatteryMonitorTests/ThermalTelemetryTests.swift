@@ -65,4 +65,43 @@ final class ThermalTelemetryTests: XCTestCase {
         XCTAssertEqual(gpu.celsius, 68, accuracy: 0.001)
         XCTAssertEqual(gpu.band, .green)
     }
+
+    func testPowermetricsParserExtractsTemperatureReadingsWithoutColon() throws {
+        let output = """
+        CPU die temperature 72.5 C
+        GPU temperature 68 C
+        """
+
+        let snapshot = PowermetricsThermalParser.parse(output)
+
+        let cpu = try XCTUnwrap(snapshot.thermalReadings.first { $0.name == "CPU Die" })
+        XCTAssertEqual(cpu.celsius, 72.5, accuracy: 0.001)
+
+        let gpu = try XCTUnwrap(snapshot.thermalReadings.first { $0.name == "GPU" })
+        XCTAssertEqual(gpu.celsius, 68, accuracy: 0.001)
+    }
+
+    func testPowermetricsParserIgnoresDecorativeThermalPressureHeader() {
+        let output = """
+        **** Thermal pressure ****
+        """
+
+        let snapshot = PowermetricsThermalParser.parse(output)
+
+        XCTAssertNil(snapshot.thermalPressure)
+        XCTAssertEqual(snapshot.throttling.level, "Nominal")
+    }
+
+    func testPowermetricsParserDeduplicatesComponentPowerRows() {
+        let output = """
+        CPU Power: 0 mW
+        GPU Power: 547 mW
+        ANE Power: 0 mW
+        GPU Power: 547 mW
+        """
+
+        let snapshot = PowermetricsThermalParser.parse(output)
+
+        XCTAssertEqual(snapshot.componentPowers.map(\.name), ["CPU", "GPU", "ANE"])
+    }
 }
