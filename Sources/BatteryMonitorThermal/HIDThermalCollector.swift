@@ -80,17 +80,35 @@ enum HIDReadingMapper {
         guard raw.celsius.isFinite else { throw HIDReadingMappingError.nonFiniteTemperature }
 
         let category = HIDSensorClassifier.category(for: raw.product)
-        let identity = raw.registryID == 0 ? "index-\(raw.index)" : "registry-\(raw.registryID)"
         let components = [slug(raw.product), slug(raw.location)].filter { !$0.isEmpty }
         let suffix = components.isEmpty ? "temperature" : components.joined(separator: ":")
-        let label = raw.product.isEmpty ? "IOHID temperature \(raw.index)" : raw.product
-        let warnings = (-40...150).contains(raw.celsius)
-            ? []
-            : ["temperature is outside the -40...150 C plausibility range"]
+        let identifier: String
+        if raw.registryID != 0 {
+            identifier = "registry-\(raw.registryID):\(suffix)"
+        } else if !components.isEmpty {
+            identifier = "sensor:\(components.joined(separator: ":"))"
+        } else {
+            identifier = "sensor:unidentified"
+        }
+        let label: String
+        if !raw.product.isEmpty {
+            label = raw.product
+        } else if !raw.location.isEmpty {
+            label = "IOHID temperature \(raw.location)"
+        } else {
+            label = "Unidentified IOHID temperature"
+        }
+        var warnings: [String] = []
+        if !(-40...150).contains(raw.celsius) {
+            warnings.append("temperature is outside the -40...150 C plausibility range")
+        }
+        if raw.registryID == 0, components.isEmpty {
+            warnings.append("stable hardware identity unavailable")
+        }
 
         return .temperature(
             source: "iohid",
-            identifier: "\(identity):\(suffix)",
+            identifier: identifier,
             label: label,
             category: category,
             celsius: raw.celsius,
@@ -107,32 +125,34 @@ enum HIDReadingMapper {
     }
 }
 
-public struct LiveHIDRecordProvider: HIDRecordProviding {
-    private typealias ClientCreate = @convention(c) (UnsafeRawPointer?) -> UnsafeMutableRawPointer?
-    private typealias SetMatching = @convention(c) (UnsafeMutableRawPointer?, UnsafeRawPointer?) -> Int32
-    private typealias CopyServices = @convention(c) (UnsafeMutableRawPointer?) -> UnsafeMutableRawPointer?
-    private typealias CopyProperty = @convention(c) (UnsafeRawPointer?, UnsafeRawPointer?) -> UnsafeMutableRawPointer?
-    private typealias CopyEvent = @convention(c) (UnsafeRawPointer?, Int64, Int32, Int64) -> UnsafeMutableRawPointer?
-    private typealias GetFloatValue = @convention(c) (UnsafeRawPointer?, Int32) -> Double
+struct HIDDynamicAPI {
+    typealias ClientCreate = @convention(c) (UnsafeRawPointer?) -> UnsafeMutableRawPointer?
+    typealias SetMatching = @convention(c) (UnsafeMutableRawPointer?, UnsafeRawPointer?) -> Int32
+    typealias CopyServices = @convention(c) (UnsafeMutableRawPointer?) -> UnsafeMutableRawPointer?
+    typealias CopyProperty = @convention(c) (UnsafeRawPointer?, UnsafeRawPointer?) -> UnsafeMutableRawPointer?
+    typealias CopyEvent = @convention(c) (UnsafeRawPointer?, Int64, Int32, Int64) -> UnsafeMutableRawPointer?
+    typealias GetFloatValue = @convention(c) (UnsafeRawPointer?, Int32) -> Double
 
-    private struct API {
-        let createClient: ClientCreate
-        let setMatching: SetMatching
-        let copyServices: CopyServices
-        let copyProperty: CopyProperty
-        let copyEvent: CopyEvent
-        let getFloatValue: GetFloatValue
+    private let library: DynamicSystemLibrary
+    let createClient: ClientCreate
+    let setMatching: SetMatching
+    let copyServices: CopyServices
+    let copyProperty: CopyProperty
+    let copyEvent: CopyEvent
+    let getFloatValue: GetFloatValue
 
-        init(library: DynamicSystemLibrary) throws {
-            createClient = try library.resolve("IOHIDEventSystemClientCreate")
-            setMatching = try library.resolve("IOHIDEventSystemClientSetMatching")
-            copyServices = try library.resolve("IOHIDEventSystemClientCopyServices")
-            copyProperty = try library.resolve("IOHIDServiceClientCopyProperty")
-            copyEvent = try library.resolve("IOHIDServiceClientCopyEvent")
-            getFloatValue = try library.resolve("IOHIDEventGetFloatValue")
-        }
+    init(library: DynamicSystemLibrary) throws {
+        self.library = library
+        createClient = try library.resolve("IOHIDEventSystemClientCreate")
+        setMatching = try library.resolve("IOHIDEventSystemClientSetMatching")
+        copyServices = try library.resolve("IOHIDEventSystemClientCopyServices")
+        copyProperty = try library.resolve("IOHIDServiceClientCopyProperty")
+        copyEvent = try library.resolve("IOHIDServiceClientCopyEvent")
+        getFloatValue = try library.resolve("IOHIDEventGetFloatValue")
     }
+}
 
+public struct LiveHIDRecordProvider: HIDRecordProviding {
     private let libraryFactory: @Sendable () throws -> DynamicSystemLibrary
 
     public init() {
@@ -152,7 +172,7 @@ public struct LiveHIDRecordProvider: HIDRecordProviding {
     public func recordBatch() throws -> HIDRecordBatch {
         do {
             let library = try libraryFactory()
-            let api = try API(library: library)
+            let api = try HIDDynamicAPI(library: library)
             return try collect(api: api)
         } catch let error as DynamicSystemLibraryError {
             throw HIDProviderError(kind: .unavailable, message: error.description)
@@ -163,7 +183,7 @@ public struct LiveHIDRecordProvider: HIDRecordProviding {
         }
     }
 
-    private func collect(api: API) throws -> HIDRecordBatch {
+    private func collect(api: HIDDynamicAPI) throws -> HIDRecordBatch {
         let matching = ["PrimaryUsagePage": 0xff00, "PrimaryUsage": 5] as CFDictionary
         guard let client = api.createClient(nil) else {
             throw HIDProviderError(kind: .failed, message: "IOHID event system client could not be created")
@@ -215,7 +235,7 @@ public struct LiveHIDRecordProvider: HIDRecordProviding {
         return HIDRecordBatch(records: records, attemptedCount: count, warnings: warnings)
     }
 
-    private func copiedProperty(_ name: String, service: UnsafeRawPointer, api: API) -> CFTypeRef? {
+    private func copiedProperty(_ name: String, service: UnsafeRawPointer, api: HIDDynamicAPI) -> CFTypeRef? {
         let key = name as CFString
         guard let pointer = api.copyProperty(service, Unmanaged.passUnretained(key).toOpaque()) else {
             return nil
@@ -223,11 +243,11 @@ public struct LiveHIDRecordProvider: HIDRecordProviding {
         return Unmanaged<CFTypeRef>.fromOpaque(pointer).takeRetainedValue()
     }
 
-    private func stringProperty(_ name: String, service: UnsafeRawPointer, api: API) -> String? {
+    private func stringProperty(_ name: String, service: UnsafeRawPointer, api: HIDDynamicAPI) -> String? {
         copiedProperty(name, service: service, api: api) as? String
     }
 
-    private func integerProperty(_ name: String, service: UnsafeRawPointer, api: API) -> UInt64? {
+    private func integerProperty(_ name: String, service: UnsafeRawPointer, api: HIDDynamicAPI) -> UInt64? {
         (copiedProperty(name, service: service, api: api) as? NSNumber)?.uint64Value
     }
 }
@@ -261,10 +281,7 @@ public struct HIDThermalCollector: ThermalCollector {
             }
 
             let boundedWarnings = bounded(warnings)
-            guard !batch.records.isEmpty || batch.attemptedCount == 0 else {
-                return failedEmptyBatch(batch: batch, warnings: boundedWarnings, start: start)
-            }
-            if readings.isEmpty, batch.attemptedCount > 0, batch.records.isEmpty {
+            if readings.isEmpty, batch.attemptedCount > 0 {
                 return failedEmptyBatch(batch: batch, warnings: boundedWarnings, start: start)
             }
             return .completed(

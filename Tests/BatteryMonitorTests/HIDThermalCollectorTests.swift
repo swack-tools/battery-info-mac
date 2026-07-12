@@ -43,7 +43,7 @@ final class HIDThermalCollectorTests: XCTestCase {
         XCTAssertEqual(reading.warnings, [])
     }
 
-    func testMapperUsesIndexIdentityAndFallbackLabelWhenPropertiesAreEmpty() throws {
+    func testMapperUsesGenericIdentityAndFallbackLabelWhenPropertiesAreEmpty() throws {
         let reading = try HIDReadingMapper.map(HIDRawRecord(
             index: 3,
             product: "",
@@ -52,10 +52,45 @@ final class HIDThermalCollectorTests: XCTestCase {
             celsius: 22
         ))
 
-        XCTAssertEqual(reading.identifier, "index-3:temperature")
-        XCTAssertEqual(reading.label, "IOHID temperature 3")
+        XCTAssertEqual(reading.identifier, "sensor:unidentified")
+        XCTAssertEqual(reading.label, "Unidentified IOHID temperature")
         XCTAssertEqual(reading.category, .system)
         XCTAssertEqual(reading.classification, .unclassified)
+        XCTAssertEqual(reading.warnings, ["stable hardware identity unavailable"])
+    }
+
+    func testFallbackIdentityIsStableAcrossPermutedEnumerationIndices() throws {
+        let firstOrder = [
+            HIDRawRecord(index: 0, product: "CPU Die Temperature", location: "CPU 0", registryID: 0, celsius: 50),
+            HIDRawRecord(index: 1, product: "Battery Gas Gauge", location: "Pack", registryID: 0, celsius: 31)
+        ]
+        let reversedOrder = [
+            HIDRawRecord(index: 0, product: "Battery Gas Gauge", location: "Pack", registryID: 0, celsius: 31),
+            HIDRawRecord(index: 1, product: "CPU Die Temperature", location: "CPU 0", registryID: 0, celsius: 50)
+        ]
+
+        let firstIdentifiers = try firstOrder.map(HIDReadingMapper.map).map(\.identifier).sorted()
+        let reversedIdentifiers = try reversedOrder.map(HIDReadingMapper.map).map(\.identifier).sorted()
+
+        XCTAssertEqual(firstIdentifiers, reversedIdentifiers)
+        XCTAssertEqual(firstIdentifiers, [
+            "sensor:battery-gas-gauge:pack",
+            "sensor:cpu-die-temperature:cpu-0"
+        ])
+    }
+
+    func testCompletelyUnidentifiedSensorUsesGenericStableIdentityAndWarning() throws {
+        let reading = try HIDReadingMapper.map(HIDRawRecord(
+            index: 99,
+            product: "",
+            location: "",
+            registryID: 0,
+            celsius: 22
+        ))
+
+        XCTAssertEqual(reading.identifier, "sensor:unidentified")
+        XCTAssertEqual(reading.label, "Unidentified IOHID temperature")
+        XCTAssertEqual(reading.warnings, ["stable hardware identity unavailable"])
     }
 
     func testMapperPreservesImplausibleFiniteValueWithWarning() throws {
@@ -149,6 +184,27 @@ final class HIDThermalCollectorTests: XCTestCase {
         XCTAssertEqual(result.status.warnings, ["IOHID service 1: nonfinite temperature"])
     }
 
+    func testAllNonfiniteRecordsFailWithZeroReadableEvents() {
+        let provider = FixtureHIDProvider(batch: HIDRecordBatch(
+            records: [
+                HIDRawRecord(index: 0, product: "CPU temperature", location: "die", registryID: 1, celsius: .nan),
+                HIDRawRecord(index: 1, product: "GPU temperature", location: "die", registryID: 2, celsius: .infinity)
+            ],
+            attemptedCount: 2
+        ))
+
+        let result = HIDThermalCollector(provider: provider).collect(at: .distantPast)
+
+        XCTAssertEqual(result.readings, [])
+        XCTAssertEqual(result.status.state, .failed)
+        XCTAssertEqual(result.status.scannedRecordCount, 2)
+        XCTAssertEqual(result.status.error, "IOHID scanned 2 services but produced no readable events")
+        XCTAssertEqual(result.status.warnings, [
+            "IOHID service 0: nonfinite temperature",
+            "IOHID service 1: nonfinite temperature"
+        ])
+    }
+
     func testNoMatchingServicesIsUnavailable() {
         let error = HIDProviderError(kind: .unavailable, message: "IOHID found no matching temperature services")
 
@@ -228,6 +284,36 @@ final class HIDThermalCollectorTests: XCTestCase {
             "IOHIDEventSystemClientSetMatching"
         ])
     }
+
+    func testHIDAPIRetainsDynamicLibraryUntilAPIIsReleased() throws {
+        let symbols = [
+            "IOHIDEventSystemClientCreate",
+            "IOHIDEventSystemClientSetMatching",
+            "IOHIDEventSystemClientCopyServices",
+            "IOHIDServiceClientCopyProperty",
+            "IOHIDServiceClientCopyEvent",
+            "IOHIDEventGetFloatValue"
+        ]
+        let backend = FixtureDynamicLibraryBackend(
+            openResult: UnsafeMutableRawPointer(bitPattern: 1),
+            symbols: Dictionary(uniqueKeysWithValues: symbols.enumerated().map {
+                ($0.element, UnsafeMutableRawPointer(bitPattern: $0.offset + 2)!)
+            })
+        )
+        var library: DynamicSystemLibrary? = try DynamicSystemLibrary(
+            source: "iohid",
+            path: "/fixture",
+            backend: backend
+        )
+        var api: HIDDynamicAPI? = try HIDDynamicAPI(library: XCTUnwrap(library))
+
+        library = nil
+        XCTAssertEqual(backend.closeCount, 0)
+        XCTAssertNotNil(api)
+
+        api = nil
+        XCTAssertEqual(backend.closeCount, 1)
+    }
 }
 
 private struct FixtureHIDProvider: HIDRecordProviding {
@@ -246,6 +332,7 @@ private final class FixtureDynamicLibraryBackend: DynamicLibraryBackend, @unchec
     let openResult: UnsafeMutableRawPointer?
     let symbols: [String: UnsafeMutableRawPointer]
     private(set) var symbolRequests: [String] = []
+    private(set) var closeCount = 0
 
     init(
         openResult: UnsafeMutableRawPointer?,
@@ -268,6 +355,7 @@ private final class FixtureDynamicLibraryBackend: DynamicLibraryBackend, @unchec
 
     func close(handle: UnsafeMutableRawPointer) {
         _ = handle
+        closeCount += 1
     }
 
     func errorMessage() -> String { "fixture loader error" }

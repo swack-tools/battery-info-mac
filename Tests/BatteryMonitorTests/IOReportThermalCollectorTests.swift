@@ -34,6 +34,23 @@ final class IOReportThermalCollectorTests: XCTestCase {
         }
     }
 
+    func testMapperRejectsNonthermalContextAnywhereInFullPath() {
+        let records = [
+            record(group: "Energy Model", channel: "CPU Temperature", unit: "C"),
+            record(group: "Thermal", subgroup: "GPU Power", channel: "GPU Temperature", unit: "C"),
+            record(group: "CPU Residency", channel: "CPU Temperature", unit: "C"),
+            record(group: "Thermal", subgroup: "Sample Duration", channel: "SoC Temperature", unit: "C"),
+            record(group: "Thermal", subgroup: "Raw Context", channel: "Battery Temperature", unit: "C")
+        ]
+
+        for raw in records {
+            XCTAssertNil(
+                IOReportReadingMapper.map(raw),
+                "\(raw.group)/\(raw.subgroup)/\(raw.channel)"
+            )
+        }
+    }
+
     func testMapperRejectsStateResidenciesEvenUnderTemperatureChannel() {
         let raw = record(
             group: "Thermal",
@@ -121,6 +138,34 @@ final class IOReportThermalCollectorTests: XCTestCase {
         XCTAssertEqual(result.status.warnings, [])
     }
 
+    func testNativeBatchCountsChannelEntriesRatherThanExpandedStateRecords() {
+        let records = [
+            record(group: "CPU Stats", channel: "CPU Residency", unit: "ns"),
+            record(group: "CPU Stats", channel: "CPU Residency", unit: "ns", state: "P0", stateIndex: 0),
+            record(group: "CPU Stats", channel: "CPU Residency", unit: "ns", state: "P1", stateIndex: 1)
+        ]
+
+        let batch = IOReportRecordBatch.nativeScan(
+            records: records,
+            channelEntryCount: 1
+        )
+
+        XCTAssertEqual(batch.records.count, 3)
+        XCTAssertEqual(batch.scannedCount, 1)
+    }
+
+    func testNativeBatchCountsMalformedChannelEntriesAsScanned() {
+        let batch = IOReportRecordBatch.nativeScan(
+            records: [record(group: "Thermal", channel: "CPU Temperature", unit: "C")],
+            channelEntryCount: 2,
+            warnings: ["IOReport channel 1: record is not a dictionary"]
+        )
+
+        XCTAssertEqual(batch.records.count, 1)
+        XCTAssertEqual(batch.scannedCount, 2)
+        XCTAssertEqual(batch.warnings, ["IOReport channel 1: record is not a dictionary"])
+    }
+
     func testInjectedBatchWarningsProduceBoundedPartialStatus() {
         let warnings = (0..<25).map { "IOReport record \($0): malformed channel" }
         let provider = FixtureIOReportProvider(batch: IOReportRecordBatch(
@@ -196,6 +241,41 @@ final class IOReportThermalCollectorTests: XCTestCase {
         ])
     }
 
+    func testIOReportAPIRetainsDynamicLibraryUntilAPIIsReleased() throws {
+        let symbols = [
+            "IOReportCopyAllChannels",
+            "IOReportCreateSubscription",
+            "IOReportCreateSamples",
+            "IOReportCreateSamplesDelta",
+            "IOReportChannelGetGroup",
+            "IOReportChannelGetSubGroup",
+            "IOReportChannelGetChannelName",
+            "IOReportChannelGetUnitLabel",
+            "IOReportSimpleGetIntegerValue",
+            "IOReportStateGetCount",
+            "IOReportStateGetNameForIndex",
+            "IOReportStateGetResidency"
+        ]
+        let backend = IOReportFixtureDynamicLibraryBackend(
+            symbols: Dictionary(uniqueKeysWithValues: symbols.enumerated().map {
+                ($0.element, UnsafeMutableRawPointer(bitPattern: $0.offset + 2)!)
+            })
+        )
+        var library: DynamicSystemLibrary? = try DynamicSystemLibrary(
+            source: "ioreport",
+            path: "/fixture",
+            backend: backend
+        )
+        var api: IOReportAPI? = try IOReportAPI(library: XCTUnwrap(library))
+
+        library = nil
+        XCTAssertEqual(backend.closeCount, 0)
+        XCTAssertNotNil(api)
+
+        api = nil
+        XCTAssertEqual(backend.closeCount, 1)
+    }
+
     private func record(
         group: String,
         subgroup: String = "",
@@ -238,6 +318,7 @@ private struct ThrowingIOReportProvider: IOReportRecordProviding {
 private final class IOReportFixtureDynamicLibraryBackend: DynamicLibraryBackend, @unchecked Sendable {
     let symbols: [String: UnsafeMutableRawPointer]
     private(set) var symbolRequests: [String] = []
+    private(set) var closeCount = 0
 
     init(symbols: [String: UnsafeMutableRawPointer]) {
         self.symbols = symbols
@@ -255,6 +336,9 @@ private final class IOReportFixtureDynamicLibraryBackend: DynamicLibraryBackend,
         return symbols[name]
     }
 
-    func close(handle: UnsafeMutableRawPointer) { _ = handle }
+    func close(handle: UnsafeMutableRawPointer) {
+        _ = handle
+        closeCount += 1
+    }
     func errorMessage() -> String { "fixture symbol missing" }
 }

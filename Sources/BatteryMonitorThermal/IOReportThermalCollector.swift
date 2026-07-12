@@ -41,6 +41,18 @@ public struct IOReportRecordBatch: Equatable, Sendable {
         self.scannedCount = scannedCount
         self.warnings = warnings
     }
+
+    static func nativeScan(
+        records: [IOReportRawRecord],
+        channelEntryCount: Int,
+        warnings: [String] = []
+    ) -> IOReportRecordBatch {
+        IOReportRecordBatch(
+            records: records,
+            scannedCount: channelEntryCount,
+            warnings: warnings
+        )
+    }
 }
 
 public protocol IOReportRecordProviding: Sendable {
@@ -71,7 +83,7 @@ enum IOReportRecordIdentity {
 
 enum IOReportReadingMapper {
     private static let celsiusUnits = ["c", "°c", "degc", "celsius"]
-    private static let rejectedChannelTerms = [
+    private static let rejectedPathTerms = [
         "power", "energy", "residency", "duration", "timing", "time", "raw"
     ]
 
@@ -80,11 +92,10 @@ enum IOReportReadingMapper {
         let unit = raw.unit.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard celsiusUnits.contains(unit) else { return nil }
 
-        let channel = raw.channel.lowercased()
-        guard !rejectedChannelTerms.contains(where: channel.contains) else { return nil }
         let searchable = [raw.group, raw.subgroup, raw.channel]
             .joined(separator: " ")
             .lowercased()
+        guard !rejectedPathTerms.contains(where: searchable.contains) else { return nil }
         guard searchable.contains("thermal") || searchable.contains("temperature") else {
             return nil
         }
@@ -137,6 +148,7 @@ struct IOReportAPI {
     typealias StateName = @convention(c) (UnsafeRawPointer?, Int32) -> UnsafeMutableRawPointer?
     typealias StateResidency = @convention(c) (UnsafeRawPointer?, Int32) -> Int64
 
+    private let library: DynamicSystemLibrary
     let copyAllChannels: CopyAllChannels
     let createSubscription: CreateSubscription
     let createSamples: CreateSamples
@@ -151,6 +163,7 @@ struct IOReportAPI {
     let stateResidency: StateResidency
 
     init(library: DynamicSystemLibrary) throws {
+        self.library = library
         copyAllChannels = try library.resolve("IOReportCopyAllChannels")
         createSubscription = try library.resolve("IOReportCreateSubscription")
         createSamples = try library.resolve("IOReportCreateSamples")
@@ -303,7 +316,11 @@ public struct LiveIOReportRecordProvider: IOReportRecordProviding {
         guard !records.isEmpty else {
             throw IOReportProviderError(kind: .failed, message: "IOReport returned no channel records")
         }
-        return IOReportRecordBatch(records: records, scannedCount: records.count, warnings: warnings)
+        return .nativeScan(
+            records: records,
+            channelEntryCount: channelCount,
+            warnings: warnings
+        )
     }
 
     private func string(_ pointer: UnsafeMutableRawPointer?) -> String {
