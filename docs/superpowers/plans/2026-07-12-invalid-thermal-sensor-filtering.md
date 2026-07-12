@@ -16,7 +16,7 @@
 - Modify: `Sources/BatteryMonitorThermal/HIDThermalCollector.swift`
 - Test: `Tests/BatteryMonitorTests/HIDThermalCollectorTests.swift`
 
-- [ ] **Step 1: Write failing mapper tests**
+- [x] **Step 1: Write failing mapper tests**
 
 Add tests that pass `PMU tdev1`, `PMU2 tdev1`, and `PMU2 tdev3` through `HIDReadingMapper.map` and assert `nil`. Include whitespace/case variation, then assert that `PMU tdev3` and `PMU2 tdev2` still produce readings.
 
@@ -36,7 +36,7 @@ func testMapperPreservesSimilarValidPMUProducts() throws {
 }
 ```
 
-- [ ] **Step 2: Run the focused tests and verify failure**
+- [x] **Step 2: Run the focused tests and verify failure**
 
 Run:
 
@@ -46,7 +46,7 @@ swift test --filter HIDThermalCollectorTests.testMapperOmitsConfirmedUnreliableP
 
 Expected: compilation or assertion failure because the mapper still returns a reading for these products.
 
-- [ ] **Step 3: Implement normalized identity rejection**
+- [x] **Step 3: Implement normalized identity rejection**
 
 Change `HIDReadingMapper.map` to return `DetailedThermalReading?`, normalize the product with trimming and lowercasing, and return `nil` for the three exact normalized values.
 
@@ -66,7 +66,7 @@ static func map(_ raw: HIDRawRecord) throws -> DetailedThermalReading? {
 
 Update the collector to append only non-`nil` mapped readings. Update existing direct mapper tests to unwrap expected readings and `compactMap` optional mapper results where arrays are mapped.
 
-- [ ] **Step 4: Run all IOHID tests**
+- [x] **Step 4: Run all IOHID tests**
 
 Run:
 
@@ -82,7 +82,7 @@ Expected: all IOHID tests pass.
 - Modify: `Sources/BatteryMonitorThermal/SMCThermalCollector.swift`
 - Test: `Tests/BatteryMonitorTests/SMCThermalCollectorTests.swift`
 
-- [ ] **Step 1: Write failing mapper tests**
+- [x] **Step 1: Write failing mapper tests**
 
 Add one test proving `TVDi` is omitted despite a finite decodable payload and another proving neighboring heuristic key `TVDj` remains emitted.
 
@@ -98,7 +98,7 @@ func testMapperPreservesNeighboringHeuristicTemperatureKey() throws {
 }
 ```
 
-- [ ] **Step 2: Run the focused test and verify failure**
+- [x] **Step 2: Run the focused test and verify failure**
 
 Run:
 
@@ -108,7 +108,7 @@ swift test --filter SMCThermalCollectorTests.testMapperOmitsConfirmedUnreliableT
 
 Expected: failure because `TVDi` currently becomes a heuristic temperature reading.
 
-- [ ] **Step 3: Implement exact SMC-key rejection**
+- [x] **Step 3: Implement exact SMC-key rejection**
 
 Add an early return before classification and decoding:
 
@@ -116,7 +116,7 @@ Add an early return before classification and decoding:
 guard raw.key != "TVDi" else { return nil }
 ```
 
-- [ ] **Step 4: Run all SMC tests**
+- [x] **Step 4: Run all SMC tests**
 
 Run:
 
@@ -131,7 +131,7 @@ Expected: all SMC tests pass.
 **Files:**
 - Modify: `docs/superpowers/plans/2026-07-12-invalid-thermal-sensor-filtering.md`
 
-- [ ] **Step 1: Run formatting and diff checks**
+- [x] **Step 1: Run formatting and diff checks**
 
 Run:
 
@@ -141,7 +141,7 @@ git diff --check
 
 Expected: no output and exit status 0.
 
-- [ ] **Step 2: Run the complete test suite**
+- [x] **Step 2: Run the complete test suite**
 
 Run:
 
@@ -151,7 +151,7 @@ swift test
 
 Expected: all tests pass with zero failures.
 
-- [ ] **Step 3: Commit the implementation**
+- [x] **Step 3: Commit the implementation**
 
 Run:
 

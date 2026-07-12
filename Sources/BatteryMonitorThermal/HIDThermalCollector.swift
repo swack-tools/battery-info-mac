@@ -76,8 +76,18 @@ enum HIDSensorClassifier {
 }
 
 enum HIDReadingMapper {
-    static func map(_ raw: HIDRawRecord) throws -> DetailedThermalReading {
+    private static let excludedProducts: Set<String> = [
+        "pmu tdev1",
+        "pmu2 tdev1",
+        "pmu2 tdev3"
+    ]
+
+    static func map(_ raw: HIDRawRecord) throws -> DetailedThermalReading? {
         guard raw.celsius.isFinite else { throw HIDReadingMappingError.nonFiniteTemperature }
+        let normalizedProduct = raw.product
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        guard !excludedProducts.contains(normalizedProduct) else { return nil }
 
         let category = HIDSensorClassifier.category(for: raw.product)
         let components = [slug(raw.product), slug(raw.location)].filter { !$0.isEmpty }
@@ -276,7 +286,7 @@ public struct HIDThermalCollector: ThermalCollector {
             var warnings = batch.warnings
             for record in batch.records {
                 do {
-                    let reading = try HIDReadingMapper.map(record)
+                    guard let reading = try HIDReadingMapper.map(record) else { continue }
                     readings.append(reading)
                     warnings.append(contentsOf: reading.warnings.map { "IOHID service \(record.index): \($0)" })
                 } catch HIDReadingMappingError.nonFiniteTemperature {
