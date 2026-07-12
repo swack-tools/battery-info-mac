@@ -3,10 +3,12 @@
 #include <CoreFoundation/CoreFoundation.h>
 #include <IOKit/IOKitLib.h>
 #include <mach/mach.h>
+#include <dlfcn.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #define TP_SMC_KERNEL_INDEX 2
 #define TP_SMC_READ_BYTES 5
@@ -426,6 +428,295 @@ int32_t tp_hid_copy_temperature_records(
     }
 
     TPHIDRecord *trimmed = realloc(output, written * sizeof(*output));
+    *records = trimmed == NULL ? output : trimmed;
+    *count = written;
+    return 0;
+}
+
+typedef const void *TPIOReportSubscriptionRef;
+typedef CFDictionaryRef (*TPIOReportCopyAllChannelsFn)(uint64_t, uint64_t);
+typedef TPIOReportSubscriptionRef (*TPIOReportCreateSubscriptionFn)(
+    CFTypeRef,
+    CFMutableDictionaryRef,
+    CFMutableDictionaryRef *,
+    uint64_t,
+    CFTypeRef
+);
+typedef CFDictionaryRef (*TPIOReportCreateSamplesFn)(
+    TPIOReportSubscriptionRef,
+    CFMutableDictionaryRef,
+    CFTypeRef
+);
+typedef CFDictionaryRef (*TPIOReportCreateSamplesDeltaFn)(
+    CFDictionaryRef,
+    CFDictionaryRef,
+    CFTypeRef
+);
+typedef CFStringRef (*TPIOReportChannelStringFn)(CFDictionaryRef);
+typedef int64_t (*TPIOReportSimpleValueFn)(CFDictionaryRef, int32_t);
+typedef int32_t (*TPIOReportStateCountFn)(CFDictionaryRef);
+typedef CFStringRef (*TPIOReportStateNameFn)(CFDictionaryRef, int32_t);
+typedef int64_t (*TPIOReportStateResidencyFn)(CFDictionaryRef, int32_t);
+
+typedef struct {
+    TPIOReportCopyAllChannelsFn copy_all_channels;
+    TPIOReportCreateSubscriptionFn create_subscription;
+    TPIOReportCreateSamplesFn create_samples;
+    TPIOReportCreateSamplesDeltaFn create_samples_delta;
+    TPIOReportChannelStringFn channel_group;
+    TPIOReportChannelStringFn channel_subgroup;
+    TPIOReportChannelStringFn channel_name;
+    TPIOReportChannelStringFn channel_unit;
+    TPIOReportSimpleValueFn simple_value;
+    TPIOReportStateCountFn state_count;
+    TPIOReportStateNameFn state_name;
+    TPIOReportStateResidencyFn state_residency;
+} TPIOReportAPI;
+
+static int tp_ioreport_load_symbol(
+    void *handle,
+    const char *name,
+    void **output,
+    char *error,
+    size_t error_capacity
+) {
+    dlerror();
+    *output = dlsym(handle, name);
+    const char *message = dlerror();
+    if (*output == NULL || message != NULL) {
+        char detail[256];
+        snprintf(detail, sizeof(detail), "IOReport symbol %s is unavailable: %s",
+                 name, message == NULL ? "not found" : message);
+        tp_set_error(error, error_capacity, detail);
+        return 0;
+    }
+    return 1;
+}
+
+static int tp_ioreport_load_api(
+    void *handle,
+    TPIOReportAPI *api,
+    char *error,
+    size_t error_capacity
+) {
+#define TP_LOAD_IOREPORT(field, name) \
+    if (!tp_ioreport_load_symbol(handle, name, (void **)&api->field, error, error_capacity)) return 0
+    TP_LOAD_IOREPORT(copy_all_channels, "IOReportCopyAllChannels");
+    TP_LOAD_IOREPORT(create_subscription, "IOReportCreateSubscription");
+    TP_LOAD_IOREPORT(create_samples, "IOReportCreateSamples");
+    TP_LOAD_IOREPORT(create_samples_delta, "IOReportCreateSamplesDelta");
+    TP_LOAD_IOREPORT(channel_group, "IOReportChannelGetGroup");
+    TP_LOAD_IOREPORT(channel_subgroup, "IOReportChannelGetSubGroup");
+    TP_LOAD_IOREPORT(channel_name, "IOReportChannelGetChannelName");
+    TP_LOAD_IOREPORT(channel_unit, "IOReportChannelGetUnitLabel");
+    TP_LOAD_IOREPORT(simple_value, "IOReportSimpleGetIntegerValue");
+    TP_LOAD_IOREPORT(state_count, "IOReportStateGetCount");
+    TP_LOAD_IOREPORT(state_name, "IOReportStateGetNameForIndex");
+    TP_LOAD_IOREPORT(state_residency, "IOReportStateGetResidency");
+#undef TP_LOAD_IOREPORT
+    return 1;
+}
+
+static int tp_ioreport_append(
+    TPIOReportRecord **records,
+    size_t *count,
+    size_t *capacity,
+    const TPIOReportRecord *record
+) {
+    if (*count == *capacity) {
+        size_t next_capacity = *capacity == 0 ? 256 : *capacity * 2;
+        if (next_capacity > 1 << 20) {
+            return 0;
+        }
+        TPIOReportRecord *next = realloc(*records, next_capacity * sizeof(**records));
+        if (next == NULL) {
+            return 0;
+        }
+        *records = next;
+        *capacity = next_capacity;
+    }
+    (*records)[(*count)++] = *record;
+    return 1;
+}
+
+static void tp_ioreport_copy_string(CFStringRef value, char *output, size_t capacity) {
+    if (output == NULL || capacity == 0) {
+        return;
+    }
+    output[0] = '\0';
+    if (value != NULL) {
+        CFStringGetCString(value, output, capacity, kCFStringEncodingUTF8);
+    }
+}
+
+static void tp_ioreport_release(CFTypeRef value) {
+    if (value != NULL) {
+        CFRelease(value);
+    }
+}
+
+int32_t tp_ioreport_copy_records(
+    uint32_t sample_milliseconds,
+    TPIOReportRecord **records,
+    size_t *count,
+    char *error,
+    size_t error_capacity
+) {
+    if (records == NULL || count == NULL) {
+        tp_set_error(error, error_capacity, "records and count are required");
+        return -1;
+    }
+    *records = NULL;
+    *count = 0;
+
+    void *handle = dlopen("/usr/lib/libIOReport.dylib", RTLD_NOW | RTLD_LOCAL);
+    if (handle == NULL) {
+        tp_set_error(error, error_capacity, dlerror());
+        return -2;
+    }
+
+    TPIOReportAPI api;
+    memset(&api, 0, sizeof(api));
+    if (!tp_ioreport_load_api(handle, &api, error, error_capacity)) {
+        dlclose(handle);
+        return -3;
+    }
+
+    CFDictionaryRef all_channels = api.copy_all_channels(0, 0);
+    if (all_channels == NULL) {
+        dlclose(handle);
+        tp_set_error(error, error_capacity, "IOReportCopyAllChannels returned null");
+        return -4;
+    }
+    CFMutableDictionaryRef channels = CFDictionaryCreateMutableCopy(
+        kCFAllocatorDefault,
+        0,
+        all_channels
+    );
+    if (channels == NULL) {
+        tp_ioreport_release(all_channels);
+        dlclose(handle);
+        tp_set_error(error, error_capacity, "IOReport channel dictionary could not be copied");
+        return -5;
+    }
+
+    CFMutableDictionaryRef subscription_info = NULL;
+    TPIOReportSubscriptionRef subscription = api.create_subscription(
+        NULL,
+        channels,
+        &subscription_info,
+        0,
+        NULL
+    );
+    if (subscription_info != NULL) {
+        CFRelease(subscription_info);
+    }
+    if (subscription == NULL) {
+        tp_ioreport_release(channels);
+        tp_ioreport_release(all_channels);
+        dlclose(handle);
+        tp_set_error(error, error_capacity, "IOReport subscription could not be created");
+        return -6;
+    }
+
+    CFDictionaryRef first = api.create_samples(subscription, channels, NULL);
+    uint32_t bounded_milliseconds = sample_milliseconds < 1
+        ? 1
+        : (sample_milliseconds > 5000 ? 5000 : sample_milliseconds);
+    usleep((useconds_t)bounded_milliseconds * 1000);
+    CFDictionaryRef second = api.create_samples(subscription, channels, NULL);
+    CFDictionaryRef delta = first != NULL && second != NULL
+        ? api.create_samples_delta(first, second, NULL)
+        : NULL;
+    tp_ioreport_release(first);
+    tp_ioreport_release(second);
+
+    if (delta == NULL) {
+        tp_ioreport_release(subscription);
+        tp_ioreport_release(channels);
+        tp_ioreport_release(all_channels);
+        dlclose(handle);
+        tp_set_error(error, error_capacity, "IOReport delta sample could not be created");
+        return -7;
+    }
+
+    CFArrayRef channel_array = (CFArrayRef)CFDictionaryGetValue(
+        delta,
+        CFSTR("IOReportChannels")
+    );
+    if (channel_array == NULL || CFGetTypeID(channel_array) != CFArrayGetTypeID()) {
+        tp_ioreport_release(delta);
+        tp_ioreport_release(subscription);
+        tp_ioreport_release(channels);
+        tp_ioreport_release(all_channels);
+        dlclose(handle);
+        tp_set_error(error, error_capacity, "IOReport delta has no channel array");
+        return -8;
+    }
+
+    TPIOReportRecord *output = NULL;
+    size_t written = 0;
+    size_t capacity = 0;
+    CFIndex channel_count = CFArrayGetCount(channel_array);
+    int allocation_failed = 0;
+
+    for (CFIndex index = 0; index < channel_count && !allocation_failed; ++index) {
+        CFDictionaryRef channel = (CFDictionaryRef)CFArrayGetValueAtIndex(channel_array, index);
+        if (channel == NULL || CFGetTypeID(channel) != CFDictionaryGetTypeID()) {
+            continue;
+        }
+
+        TPIOReportRecord base;
+        memset(&base, 0, sizeof(base));
+        tp_ioreport_copy_string(api.channel_group(channel), base.group, sizeof(base.group));
+        tp_ioreport_copy_string(api.channel_subgroup(channel), base.subgroup, sizeof(base.subgroup));
+        tp_ioreport_copy_string(api.channel_name(channel), base.channel, sizeof(base.channel));
+        tp_ioreport_copy_string(api.channel_unit(channel), base.unit, sizeof(base.unit));
+        base.state_index = -1;
+        base.value = api.simple_value(channel, 0);
+        if (!tp_ioreport_append(&output, &written, &capacity, &base)) {
+            allocation_failed = 1;
+            break;
+        }
+
+        int32_t state_count = api.state_count(channel);
+        if (state_count < 0 || state_count > 4096) {
+            continue;
+        }
+        for (int32_t state_index = 0; state_index < state_count; ++state_index) {
+            TPIOReportRecord state = base;
+            state.state_index = state_index;
+            state.value = api.state_residency(channel, state_index);
+            tp_ioreport_copy_string(
+                api.state_name(channel, state_index),
+                state.state,
+                sizeof(state.state)
+            );
+            if (!tp_ioreport_append(&output, &written, &capacity, &state)) {
+                allocation_failed = 1;
+                break;
+            }
+        }
+    }
+
+    tp_ioreport_release(delta);
+    tp_ioreport_release(subscription);
+    tp_ioreport_release(channels);
+    tp_ioreport_release(all_channels);
+    dlclose(handle);
+
+    if (allocation_failed) {
+        free(output);
+        tp_set_error(error, error_capacity, "IOReport record allocation failed");
+        return -9;
+    }
+    if (written == 0) {
+        free(output);
+        tp_set_error(error, error_capacity, "IOReport returned no channel records");
+        return -10;
+    }
+
+    TPIOReportRecord *trimmed = realloc(output, written * sizeof(*output));
     *records = trimmed == NULL ? output : trimmed;
     *count = written;
     return 0;
