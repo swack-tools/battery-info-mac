@@ -49,6 +49,23 @@ struct SMCKeyData {
     )
 }
 
+enum SMCReadBytesRequest {
+    static func make(key: UInt32, dataSize: UInt32) throws -> SMCKeyData {
+        guard (1...32).contains(dataSize) else {
+            throw SMCProviderError(
+                message: "SMC key returned invalid data size \(dataSize)",
+                code: nil
+            )
+        }
+
+        var request = SMCKeyData()
+        request.key = key
+        request.keyInfo.dataSize = dataSize
+        request.data8 = 5
+        return request
+    }
+}
+
 enum SMCFourCCError: Error, Equatable {
     case requiresFourASCIIBytes
 }
@@ -290,7 +307,6 @@ struct SMCProviderError: Error, CustomStringConvertible {
 
 public struct LiveSMCRecordProvider: SMCRecordProviding {
     private static let kernelSelector: UInt32 = 2
-    private static let readBytesCommand: UInt8 = 5
     private static let readIndexCommand: UInt8 = 8
     private static let readKeyInfoCommand: UInt8 = 9
 
@@ -391,12 +407,9 @@ public struct LiveSMCRecordProvider: SMCRecordProviding {
         infoInput.data8 = Self.readKeyInfoCommand
         let info = try call(infoInput, connection: connection).keyInfo
 
-        var bytesInput = SMCKeyData()
-        bytesInput.key = keyValue
-        bytesInput.keyInfo.dataSize = info.dataSize
-        bytesInput.data8 = Self.readBytesCommand
+        let bytesInput = try SMCReadBytesRequest.make(key: keyValue, dataSize: info.dataSize)
         let value = try call(bytesInput, connection: connection)
-        let byteCount = min(Int(info.dataSize), 32)
+        let byteCount = Int(info.dataSize)
         var rawBytes = value.bytes
         let data = withUnsafeBytes(of: &rawBytes) { Array($0.prefix(byteCount)) }
         return SMCRawRecord(

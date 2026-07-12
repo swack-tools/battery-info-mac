@@ -30,6 +30,25 @@ final class SMCThermalCollectorTests: XCTestCase {
         XCTAssertThrowsError(try SMCFourCC.value(from: "ABCDE"))
     }
 
+    func testReadBytesRequestRejectsSizesOutsideFixedBufferBeforeCommandFive() {
+        for dataSize: UInt32 in [0, 33, .max] {
+            XCTAssertThrowsError(
+                try SMCReadBytesRequest.make(key: 0x5470_3031, dataSize: dataSize),
+                "data size \(dataSize)"
+            )
+        }
+    }
+
+    func testReadBytesRequestAcceptsFixedBufferBounds() throws {
+        for dataSize: UInt32 in [1, 32] {
+            let request = try SMCReadBytesRequest.make(key: 0x5470_3031, dataSize: dataSize)
+
+            XCTAssertEqual(request.key, 0x5470_3031)
+            XCTAssertEqual(request.keyInfo.dataSize, dataSize)
+            XCTAssertEqual(request.data8, 5)
+        }
+    }
+
     func testDecoderHandlesSignedAndUnsignedFixedPoint() throws {
         XCTAssertEqual(try SMCDecoder.decode(type: "sp78", bytes: [0x36, 0x80]), 54.5)
         XCTAssertEqual(try SMCDecoder.decode(type: "sp78", bytes: [0xff, 0x80]), -0.5)
