@@ -524,6 +524,8 @@ public struct LiveSMCRecordProvider: SMCRecordProviding {
 }
 
 public struct SMCThermalCollector: ThermalCollector {
+    private static let maximumFailureWarnings = 20
+
     public let source = "smc"
     private let provider: any SMCRecordProviding
 
@@ -535,6 +537,12 @@ public struct SMCThermalCollector: ThermalCollector {
         let start = DispatchTime.now().uptimeNanoseconds
         do {
             let batch = try provider.recordBatch()
+            guard !batch.records.isEmpty else {
+                return noReadableRecordsResult(
+                    batch: batch,
+                    durationMilliseconds: elapsedMilliseconds(since: start)
+                )
+            }
             var readings: [DetailedThermalReading] = []
             var warnings = batch.warnings
             for record in batch.records {
@@ -587,5 +595,31 @@ public struct SMCThermalCollector: ThermalCollector {
                 scannedRecordCount: 0
             )
         )
+    }
+
+    private func noReadableRecordsResult(
+        batch: SMCRecordBatch,
+        durationMilliseconds: Double
+    ) -> ThermalCollectionResult {
+        ThermalCollectionResult(
+            readings: [],
+            status: ThermalSourceStatus(
+                source: source,
+                state: .failed,
+                readingCount: 0,
+                durationMilliseconds: durationMilliseconds,
+                warnings: boundedFailureWarnings(batch.warnings),
+                error: "SMC scanned \(batch.attemptedCount) keys but produced no readable records",
+                scannedRecordCount: batch.attemptedCount
+            )
+        )
+    }
+
+    private func boundedFailureWarnings(_ warnings: [String]) -> [String] {
+        guard warnings.count > Self.maximumFailureWarnings else { return warnings }
+        let retainedCount = Self.maximumFailureWarnings - 1
+        return Array(warnings.prefix(retainedCount)) + [
+            "\(warnings.count - retainedCount) additional SMC warnings omitted"
+        ]
     }
 }

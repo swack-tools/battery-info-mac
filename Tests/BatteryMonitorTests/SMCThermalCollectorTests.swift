@@ -218,6 +218,26 @@ final class SMCThermalCollectorTests: XCTestCase {
         ])
     }
 
+    func testInjectedProviderWithNoReadableRecordsReturnsBoundedFailedStatus() {
+        let warnings = (0..<25).map { "SMC index \($0): index failure" }
+        let provider = FixtureSMCProvider(
+            records: [],
+            attemptedCount: 25,
+            warnings: warnings
+        )
+
+        let result = SMCThermalCollector(provider: provider).collect(at: .distantPast)
+
+        XCTAssertEqual(result.readings, [])
+        XCTAssertEqual(result.status.state, .failed)
+        XCTAssertEqual(result.status.readingCount, 0)
+        XCTAssertEqual(result.status.scannedRecordCount, 25)
+        XCTAssertEqual(result.status.error, "SMC scanned 25 keys but produced no readable records")
+        XCTAssertEqual(result.status.warnings.count, 20)
+        XCTAssertEqual(result.status.warnings.first, "SMC index 0: index failure")
+        XCTAssertEqual(result.status.warnings.last, "6 additional SMC warnings omitted")
+    }
+
     func testUnsupportedTemperatureEncodingProducesKeyedPartialWarning() {
         let provider = FixtureSMCProvider(records: [
             SMCRawRecord(key: "Ts0P", dataType: "flag", data: [1], status: 0)
