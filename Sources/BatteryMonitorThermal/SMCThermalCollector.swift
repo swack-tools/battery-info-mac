@@ -95,12 +95,13 @@ enum SMCFourCC {
     }
 
     static func string(from value: UInt32) -> String {
-        String(decoding: [
+        let bytes: [UInt8] = [
             UInt8((value >> 24) & 0xff),
             UInt8((value >> 16) & 0xff),
             UInt8((value >> 8) & 0xff),
             UInt8(value & 0xff)
-        ], as: UTF8.self)
+        ]
+        return String(bytes: bytes, encoding: .ascii) ?? "????"
     }
 }
 
