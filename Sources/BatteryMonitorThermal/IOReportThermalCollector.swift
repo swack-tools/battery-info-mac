@@ -200,9 +200,6 @@ struct IOReportAPI {
     ) -> UnsafeMutableRawPointer?
     typealias ChannelString = @convention(c) (UnsafeRawPointer?) -> UnsafeMutableRawPointer?
     typealias SimpleValue = @convention(c) (UnsafeRawPointer?, Int32) -> Int64
-    typealias StateCount = @convention(c) (UnsafeRawPointer?) -> Int32
-    typealias StateName = @convention(c) (UnsafeRawPointer?, Int32) -> UnsafeMutableRawPointer?
-    typealias StateResidency = @convention(c) (UnsafeRawPointer?, Int32) -> Int64
 
     private let library: DynamicSystemLibrary
     let copyAllChannels: CopyAllChannels
@@ -214,9 +211,6 @@ struct IOReportAPI {
     let channelName: ChannelString
     let channelUnit: ChannelString
     let simpleValue: SimpleValue
-    let stateCount: StateCount
-    let stateName: StateName
-    let stateResidency: StateResidency
 
     init(library: DynamicSystemLibrary) throws {
         self.library = library
@@ -229,9 +223,6 @@ struct IOReportAPI {
         channelName = try library.resolve("IOReportChannelGetChannelName")
         channelUnit = try library.resolve("IOReportChannelGetUnitLabel")
         simpleValue = try library.resolve("IOReportSimpleGetIntegerValue")
-        stateCount = try library.resolve("IOReportStateGetCount")
-        stateName = try library.resolve("IOReportStateGetNameForIndex")
-        stateResidency = try library.resolve("IOReportStateGetResidency")
     }
 }
 
@@ -361,19 +352,9 @@ public struct LiveIOReportRecordProvider: IOReportRecordProviding {
                 value: api.simpleValue(channel, 0)
             )
 
-            let stateCount = api.stateCount(channel)
-            var channelWarnings: [String] = []
-            let observedStateCount: Int
-            if (0...4096).contains(stateCount) {
-                observedStateCount = Int(stateCount)
-            } else {
-                observedStateCount = 0
-                channelWarnings.append("IOReport channel \(index): invalid state count \(stateCount)")
-            }
             accumulator.recordChannel(
                 base: base,
-                observedStateCount: observedStateCount,
-                warnings: channelWarnings
+                observedStateCount: 0
             )
         }
         return accumulator.batch()

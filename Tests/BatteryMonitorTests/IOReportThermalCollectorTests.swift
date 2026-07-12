@@ -276,10 +276,7 @@ final class IOReportThermalCollectorTests: XCTestCase {
             "IOReportChannelGetSubGroup",
             "IOReportChannelGetChannelName",
             "IOReportChannelGetUnitLabel",
-            "IOReportSimpleGetIntegerValue",
-            "IOReportStateGetCount",
-            "IOReportStateGetNameForIndex",
-            "IOReportStateGetResidency"
+            "IOReportSimpleGetIntegerValue"
         ]
         let backend = IOReportFixtureDynamicLibraryBackend(
             symbols: Dictionary(uniqueKeysWithValues: symbols.enumerated().map {
@@ -323,7 +320,7 @@ final class IOReportThermalCollectorTests: XCTestCase {
         XCTAssertFalse(snapshot.subscriptionIsAlive)
     }
 
-    func testLiveProviderObservesButDoesNotMaterializeStateRows() throws {
+    func testLiveProviderDoesNotInspectOrMaterializeStateRows() throws {
         IOReportCFixtureState.shared.reset(emitSubscribedDescriptor: true, stateCount: 3)
         let backend = IOReportFixtureDynamicLibraryBackend(symbols: ioReportCFixtureSymbols())
         let library = try DynamicSystemLibrary(source: "ioreport", path: "/fixture", backend: backend)
@@ -337,9 +334,29 @@ final class IOReportThermalCollectorTests: XCTestCase {
 
         XCTAssertEqual(batch.records.map(\.channel), ["CPU Temperature"])
         XCTAssertEqual(batch.scannedCount, 1)
-        XCTAssertEqual(snapshot.stateCountCalls, 1)
+        XCTAssertEqual(snapshot.stateCountCalls, 0)
         XCTAssertEqual(snapshot.stateNameCalls, 0)
         XCTAssertEqual(snapshot.stateResidencyCalls, 0)
+    }
+
+    func testLiveProviderTreatsSimpleChannelNegativeStateCountAsNormal() throws {
+        IOReportCFixtureState.shared.reset(emitSubscribedDescriptor: true, stateCount: -1)
+        let backend = IOReportFixtureDynamicLibraryBackend(symbols: ioReportCFixtureSymbols())
+        let library = try DynamicSystemLibrary(source: "ioreport", path: "/fixture", backend: backend)
+        let provider = LiveIOReportRecordProvider(
+            libraryFactory: { library },
+            sleeper: { _ in }
+        )
+
+        let batch = try provider.recordBatch(sampleMilliseconds: 1)
+        let result = IOReportThermalCollector(provider: FixtureIOReportProvider(batch: batch))
+            .collect(at: .distantPast)
+
+        XCTAssertEqual(batch.warnings, [])
+        XCTAssertEqual(result.status.state, .success)
+        XCTAssertEqual(result.status.warnings, [])
+        XCTAssertEqual(IOReportCFixtureState.shared.snapshot().stateCountCalls, 0)
+        XCTAssertFalse(backend.symbolRequests.contains { $0.hasPrefix("IOReportState") })
     }
 
     func testLiveProviderFailsAndCleansUpWhenSubscriptionOmitsDescriptor() throws {
@@ -530,18 +547,6 @@ private func ioReportCFixtureSymbols() -> [String: UnsafeMutableRawPointer] {
         ),
         "IOReportSimpleGetIntegerValue": unsafeBitCast(
             ioReportFixtureSimpleValue as IOReportAPI.SimpleValue,
-            to: UnsafeMutableRawPointer.self
-        ),
-        "IOReportStateGetCount": unsafeBitCast(
-            ioReportFixtureStateCount as IOReportAPI.StateCount,
-            to: UnsafeMutableRawPointer.self
-        ),
-        "IOReportStateGetNameForIndex": unsafeBitCast(
-            ioReportFixtureStateName as IOReportAPI.StateName,
-            to: UnsafeMutableRawPointer.self
-        ),
-        "IOReportStateGetResidency": unsafeBitCast(
-            ioReportFixtureStateResidency as IOReportAPI.StateResidency,
             to: UnsafeMutableRawPointer.self
         )
     ]
