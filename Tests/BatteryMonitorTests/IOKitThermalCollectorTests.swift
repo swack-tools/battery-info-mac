@@ -224,10 +224,12 @@ final class IOKitThermalCollectorTests: XCTestCase {
             scannedPropertyCount: 1
         ))
         let clock = RegistryFixtureClock(now: Date(timeIntervalSince1970: 100))
+        let mapper = CountingRegistryMapper()
         let collector = IORegistryThermalCollector(
             provider: provider,
             cacheInterval: 60,
-            now: { clock.now }
+            now: { clock.now },
+            mapper: { snapshots in mapper.map(snapshots) }
         )
 
         let first = collector.collect(at: .distantPast)
@@ -237,6 +239,7 @@ final class IOKitThermalCollectorTests: XCTestCase {
         let third = collector.collect(at: .distantPast)
 
         XCTAssertEqual(provider.callCount, 2)
+        XCTAssertEqual(mapper.callCount, 2)
         XCTAssertEqual(first.readings.first?.numericValue, 66)
         XCTAssertEqual(second.readings, first.readings)
         XCTAssertEqual(third.readings, first.readings)
@@ -297,4 +300,16 @@ private final class CountingRegistryProvider: RegistrySnapshotProviding, @unchec
 private final class RegistryFixtureClock: @unchecked Sendable {
     var now: Date
     init(now: Date) { self.now = now }
+}
+
+private final class CountingRegistryMapper: @unchecked Sendable {
+    private let lock = NSLock()
+    private(set) var callCount = 0
+
+    func map(_ snapshots: [RegistryServiceSnapshot]) -> [DetailedThermalReading] {
+        lock.lock()
+        callCount += 1
+        lock.unlock()
+        return IORegistryThermalCollector.map(snapshots: snapshots)
+    }
 }

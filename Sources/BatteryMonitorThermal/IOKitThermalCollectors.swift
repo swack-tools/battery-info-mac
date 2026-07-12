@@ -166,7 +166,7 @@ public struct AppleSmartBatteryThermalCollector: ThermalCollector {
             let batch = try provider.propertyBatch()
             var warnings = batch.warnings
             guard batch.discoveredServiceCount > 0 else {
-                let bounded = boundedWarnings(warnings)
+                let bounded = ThermalCollectionResult.boundedWarnings(warnings)
                 let state: ThermalSourceState = bounded.isEmpty ? .unavailable : .failed
                 return statusResult(
                     state: state,
@@ -185,7 +185,7 @@ public struct AppleSmartBatteryThermalCollector: ThermalCollector {
             warnings.append(contentsOf: readings.flatMap { reading in
                 reading.warnings.map { "\(reading.identifier): \($0)" }
             })
-            let bounded = boundedWarnings(warnings)
+            let bounded = ThermalCollectionResult.boundedWarnings(warnings)
             guard !readings.isEmpty else {
                 return statusResult(
                     state: .failed,
@@ -447,11 +447,14 @@ public struct LiveRegistrySnapshotProvider: RegistrySnapshotProviding {
 }
 
 public struct IORegistryThermalCollector: ThermalCollector {
+    typealias Mapper = @Sendable ([RegistryServiceSnapshot]) -> [DetailedThermalReading]
+
     public let source = "ioRegistry"
     private let provider: any RegistrySnapshotProviding
     private let cacheInterval: TimeInterval
     private let now: @Sendable () -> Date
-    private let cache = RegistrySnapshotCache()
+    private let mapper: Mapper
+    private let cache = RegistryResultCache()
 
     public init(
         provider: any RegistrySnapshotProviding = LiveRegistrySnapshotProvider(),
@@ -461,31 +464,50 @@ public struct IORegistryThermalCollector: ThermalCollector {
         self.provider = provider
         self.cacheInterval = max(0, cacheInterval)
         self.now = now
+        mapper = { snapshots in
+            IORegistryThermalCollector.map(snapshots: snapshots)
+        }
+    }
+
+    init(
+        provider: any RegistrySnapshotProviding,
+        cacheInterval: TimeInterval,
+        now: @escaping @Sendable () -> Date,
+        mapper: @escaping Mapper
+    ) {
+        self.provider = provider
+        self.cacheInterval = max(0, cacheInterval)
+        self.now = now
+        self.mapper = mapper
     }
 
     public func collect(at timestamp: Date) -> ThermalCollectionResult {
         _ = timestamp
         let start = DispatchTime.now().uptimeNanoseconds
         do {
-            let batch = try cache.value(at: now(), maxAge: cacheInterval) {
-                try provider.snapshotBatch()
+            let mapped = try cache.value(at: now(), maxAge: cacheInterval) {
+                let batch = try provider.snapshotBatch()
+                let readings = mapper(batch.snapshots)
+                var diagnostics = batch.warnings
+                diagnostics.append(
+                    "scanned \(batch.scannedServiceCount) services and \(batch.scannedPropertyCount) properties; emitted \(readings.count) thermal readings"
+                )
+                return RegistryMappedResult(
+                    readings: readings,
+                    state: batch.warnings.isEmpty ? .success : .partial,
+                    warnings: ThermalCollectionResult.boundedWarnings(diagnostics),
+                    scannedPropertyCount: batch.scannedPropertyCount
+                )
             }
-            let readings = Self.map(snapshots: batch.snapshots)
-            var diagnostics = batch.warnings
-            diagnostics.append(
-                "scanned \(batch.scannedServiceCount) services and \(batch.scannedPropertyCount) properties; emitted \(readings.count) thermal readings"
-            )
-            let warnings = boundedWarnings(diagnostics)
-            let state: ThermalSourceState = batch.warnings.isEmpty ? .success : .partial
             return ThermalCollectionResult(
-                readings: readings,
+                readings: mapped.readings,
                 status: ThermalSourceStatus(
                     source: source,
-                    state: state,
-                    readingCount: readings.count,
+                    state: mapped.state,
+                    readingCount: mapped.readings.count,
                     durationMilliseconds: elapsedMilliseconds(since: start),
-                    warnings: warnings,
-                    scannedRecordCount: batch.scannedPropertyCount
+                    warnings: mapped.warnings,
+                    scannedRecordCount: mapped.scannedPropertyCount
                 )
             )
         } catch {
@@ -602,26 +624,33 @@ public struct IORegistryThermalCollector: ThermalCollector {
     }
 }
 
-private final class RegistrySnapshotCache: @unchecked Sendable {
+private struct RegistryMappedResult: Sendable {
+    var readings: [DetailedThermalReading]
+    var state: ThermalSourceState
+    var warnings: [String]
+    var scannedPropertyCount: Int
+}
+
+private final class RegistryResultCache: @unchecked Sendable {
     private let lock = NSLock()
-    private var entry: (timestamp: Date, batch: RegistrySnapshotBatch)?
+    private var entry: (timestamp: Date, result: RegistryMappedResult)?
 
     func value(
         at timestamp: Date,
         maxAge: TimeInterval,
-        load: () throws -> RegistrySnapshotBatch
-    ) rethrows -> RegistrySnapshotBatch {
+        load: () throws -> RegistryMappedResult
+    ) rethrows -> RegistryMappedResult {
         lock.lock()
         defer { lock.unlock() }
         if maxAge > 0, let entry {
             let age = timestamp.timeIntervalSince(entry.timestamp)
             if age >= 0, age < maxAge {
-                return entry.batch
+                return entry.result
             }
         }
-        let batch = try load()
-        entry = (timestamp, batch)
-        return batch
+        let result = try load()
+        entry = (timestamp, result)
+        return result
     }
 }
 
@@ -657,9 +686,4 @@ private func registryPath(_ entry: io_registry_entry_t) -> String {
 
 private func elapsedMilliseconds(since start: UInt64) -> Double {
     Double(DispatchTime.now().uptimeNanoseconds - start) / 1_000_000
-}
-
-private func boundedWarnings(_ warnings: [String], maximum: Int = 20) -> [String] {
-    guard warnings.count > maximum else { return warnings }
-    return Array(warnings.prefix(maximum)) + ["\(warnings.count - maximum) additional warnings omitted"]
 }

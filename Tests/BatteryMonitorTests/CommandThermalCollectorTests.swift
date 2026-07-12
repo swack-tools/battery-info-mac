@@ -79,6 +79,35 @@ final class CommandThermalCollectorTests: XCTestCase {
         XCTAssertEqual(errno, ESRCH)
     }
 
+    func testProcessRunnerKillsDetachedDescendantAfterSuccessfulChildExit() throws {
+        let pidURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("thermal-runner-descendant-\(UUID().uuidString).pid")
+        defer { try? FileManager.default.removeItem(at: pidURL) }
+
+        let result = try ProcessCommandRunner(maximumBytes: 1_024).run(
+            executable: "/bin/sh",
+            arguments: [
+                "-c",
+                "sleep 30 >/dev/null 2>&1 & echo $! > '\(pidURL.path)'; exit 0"
+            ],
+            timeout: 1
+        )
+        let descendantPID = try XCTUnwrap(Int32(
+            String(contentsOf: pidURL, encoding: .utf8)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        ))
+        defer {
+            if Darwin.kill(descendantPID, 0) == 0 {
+                Darwin.kill(descendantPID, SIGKILL)
+            }
+        }
+
+        XCTAssertTrue(result.timedOut, "Cleaning an unexpected descendant must be reported")
+        errno = 0
+        XCTAssertEqual(Darwin.kill(descendantPID, 0), -1)
+        XCTAssertEqual(errno, ESRCH)
+    }
+
     func testPowermetricsSamplerDiscoveryIsSectionBoundedAndIncludesSMCOnlyWhenListed() {
         let help = """
         Usage mentions cpu_power outside the list.

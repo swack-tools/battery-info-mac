@@ -103,6 +103,14 @@ public final class ProcessCommandRunner: CommandRunning, @unchecked Sendable {
             waitForProcessGroupExit(processGroupID: spawned.processID)
         }
 
+        if processGroupExists(processGroupID: spawned.processID) {
+            timedOut = true
+            _ = Darwin.kill(-spawned.processID, SIGTERM)
+            usleep(20_000)
+            _ = Darwin.kill(-spawned.processID, SIGKILL)
+            waitForProcessGroupExit(processGroupID: spawned.processID)
+        }
+
         let captured = output.snapshot()
         return CommandResult(
             executable: executable,
@@ -240,11 +248,16 @@ public final class ProcessCommandRunner: CommandRunning, @unchecked Sendable {
     }
 
     private func waitForProcessGroupExit(processGroupID: pid_t) {
-        let deadline = DispatchTime.now() + 0.25
-        while Darwin.kill(-processGroupID, 0) == 0 || errno == EPERM {
+        let deadline = DispatchTime.now() + 1
+        while processGroupExists(processGroupID: processGroupID) {
             guard DispatchTime.now() < deadline else { return }
             usleep(1_000)
         }
+    }
+
+    private func processGroupExists(processGroupID: pid_t) -> Bool {
+        errno = 0
+        return Darwin.kill(-processGroupID, 0) == 0 || errno == EPERM
     }
 
     private func exitCode(fromWaitStatus status: Int32) -> Int32 {
@@ -613,7 +626,7 @@ public struct PowermetricsThermalCollector: ThermalCollector {
                 )
             }
 
-            let bounded = bound(warnings)
+            let bounded = ThermalCollectionResult.boundedWarnings(warnings)
             let state: ThermalSourceState = bounded.isEmpty ? .success : .partial
             return ThermalCollectionResult(
                 readings: telemetry.readings,
@@ -658,7 +671,7 @@ public struct PowermetricsThermalCollector: ThermalCollector {
                 state: state,
                 readingCount: 0,
                 durationMilliseconds: elapsed(since: start),
-                warnings: bound(warnings),
+                warnings: ThermalCollectionResult.boundedWarnings(warnings),
                 error: error,
                 scannedRecordCount: 0
             )
@@ -880,9 +893,4 @@ private func commandError(_ result: CommandResult, fallback: String) -> String {
 
 private func elapsed(since start: UInt64) -> Double {
     Double(DispatchTime.now().uptimeNanoseconds - start) / 1_000_000
-}
-
-private func bound(_ warnings: [String], maximum: Int = 20) -> [String] {
-    guard warnings.count > maximum else { return warnings }
-    return Array(warnings.prefix(maximum)) + ["\(warnings.count - maximum) additional warnings omitted"]
 }
