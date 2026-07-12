@@ -1,4 +1,5 @@
 import BatteryMonitorShared
+import BatteryMonitorThermal
 import Darwin
 import Foundation
 
@@ -45,9 +46,11 @@ guard getuid() == 0 || helperArguments.allowNonRootForFixture else {
     exit(1)
 }
 
+let coordinator = ThermalCaptureCoordinator.default
+
 repeat {
     do {
-        let snapshot = collectSnapshot(generatedAt: Date())
+        let snapshot = coordinator.collect(generatedAt: Date())
         try write(snapshot: snapshot, to: URL(fileURLWithPath: helperArguments.outputPath))
     } catch {
         fputs("BatteryMonitorPrivilegedHelper failed: \(error)\n", stderr)
@@ -62,80 +65,6 @@ repeat {
 
     sleep(helperArguments.interval)
 } while true
-
-private func collectSnapshot(generatedAt: Date) -> ThermalSnapshot {
-    let powermetricsOutput = runCommand(
-        "/usr/bin/powermetrics",
-        arguments: [
-            "--samplers",
-            supportedPowermetricsSamplers(),
-            "--show-plimits",
-            "-n",
-            "1",
-            "-i",
-            "1000"
-        ]
-    )
-
-    let pmsetOutput = runCommand("/usr/bin/pmset", arguments: ["-g", "therm"])
-    var snapshot = PowermetricsThermalParser.parse(powermetricsOutput ?? "", generatedAt: generatedAt)
-
-    if let pmsetOutput {
-        let pmsetStatus = PMSetThermalParser.parse(pmsetOutput)
-        if snapshot.throttling.percentage == 0 {
-            snapshot.throttling = pmsetStatus
-        }
-        if snapshot.thermalPressure == nil {
-            snapshot.thermalPressure = pmsetStatus.level
-        }
-    }
-
-    if powermetricsOutput == nil {
-        snapshot.messages.append("powermetrics did not return data")
-    }
-    if pmsetOutput == nil {
-        snapshot.messages.append("pmset thermal data did not return data")
-    }
-
-    return snapshot
-}
-
-private func supportedPowermetricsSamplers() -> String {
-    let preferredSamplers = ["cpu_power", "gpu_power", "ane_power", "thermal", "sfi", "smc"]
-
-    guard let help = runCommand("/usr/bin/powermetrics", arguments: ["--help"]) else {
-        return "cpu_power,gpu_power,ane_power,thermal,sfi"
-    }
-
-    let supportedSamplers = preferredSamplers.filter { help.contains($0) }
-    if supportedSamplers.isEmpty {
-        return "cpu_power,gpu_power,ane_power,thermal,sfi"
-    }
-
-    return supportedSamplers.joined(separator: ",")
-}
-
-private func runCommand(_ command: String, arguments: [String]) -> String? {
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: command)
-    process.arguments = arguments
-
-    let pipe = Pipe()
-    process.standardOutput = pipe
-    process.standardError = pipe
-
-    do {
-        try process.run()
-        process.waitUntilExit()
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        guard process.terminationStatus == 0 else {
-            return nil
-        }
-        return String(data: data, encoding: .utf8)
-    } catch {
-        return nil
-    }
-}
 
 private func write(snapshot: ThermalSnapshot, to url: URL) throws {
     let directory = url.deletingLastPathComponent()
