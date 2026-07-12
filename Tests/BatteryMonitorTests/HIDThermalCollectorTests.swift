@@ -18,6 +18,38 @@ final class HIDThermalCollectorTests: XCTestCase {
         }
     }
 
+    func testMapperOmitsExcludedProductBeforeValidatingTemperature() throws {
+        let raw = HIDRawRecord(
+            index: 0,
+            product: "PMU2 tdev3",
+            location: "",
+            registryID: 1,
+            celsius: .nan
+        )
+
+        XCTAssertNil(try HIDReadingMapper.map(raw))
+    }
+
+    func testCollectorTreatsBatchOfOnlyExcludedProductsAsSuccessfulEmptyData() {
+        let provider = FixtureHIDProvider(batch: HIDRecordBatch(
+            records: [
+                HIDRawRecord(index: 0, product: "PMU tdev1", location: "", registryID: 1, celsius: -21.8),
+                HIDRawRecord(index: 1, product: "PMU2 tdev1", location: "", registryID: 2, celsius: -21.8),
+                HIDRawRecord(index: 2, product: "PMU2 tdev3", location: "", registryID: 3, celsius: .nan)
+            ],
+            attemptedCount: 3
+        ))
+
+        let result = HIDThermalCollector(provider: provider).collect(at: .distantPast)
+
+        XCTAssertEqual(result.readings, [])
+        XCTAssertEqual(result.status.state, .success)
+        XCTAssertEqual(result.status.readingCount, 0)
+        XCTAssertEqual(result.status.scannedRecordCount, 3)
+        XCTAssertEqual(result.status.warnings, [])
+        XCTAssertNil(result.status.error)
+    }
+
     func testMapperPreservesSimilarValidPMUProducts() throws {
         for product in ["PMU tdev3", "PMU2 tdev2"] {
             let raw = HIDRawRecord(
