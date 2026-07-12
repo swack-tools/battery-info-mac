@@ -216,6 +216,33 @@ final class CommandThermalCollectorTests: XCTestCase {
         XCTAssertEqual(failure.status.state, .failed)
         XCTAssertTrue(failure.status.error?.contains("not permitted") == true)
     }
+
+    func testPMSetEmptySuccessfulCommandIsUnavailableInsteadOfFabricatedNominal() {
+        let result = PMSetThermalCollector(runner: FixtureCommandRunner(results: [
+            .fixture(stdout: "")
+        ])).collect(at: .distantPast)
+
+        XCTAssertEqual(result.status.state, .unavailable)
+        XCTAssertTrue(result.readings.isEmpty)
+        XCTAssertNil(result.throttling)
+        XCTAssertNil(result.thermalPressure)
+    }
+
+    func testPMSetPercentageOverridesContradictoryNominalText() {
+        let result = PMSetThermalCollector(runner: FixtureCommandRunner(results: [
+            .fixture(stdout: """
+            No thermal warning level has been recorded
+            No performance warning level has been recorded
+            CPU Power Status: 55
+            """)
+        ])).collect(at: .distantPast)
+
+        XCTAssertEqual(result.status.state, .success)
+        XCTAssertEqual(result.throttling?.percentage, 55)
+        XCTAssertEqual(result.throttling?.level, "Moderate")
+        XCTAssertEqual(result.thermalPressure, "Moderate")
+        XCTAssertEqual(result.readings.first?.textValue, "moderate")
+    }
 }
 
 private final class FixtureCommandRunner: CommandRunning, @unchecked Sendable {

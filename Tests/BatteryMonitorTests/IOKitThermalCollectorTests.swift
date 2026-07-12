@@ -159,6 +159,59 @@ final class IOKitThermalCollectorTests: XCTestCase {
         XCTAssertTrue(result.status.warnings.contains { $0.contains("4 services") && $0.contains("17 properties") })
     }
 
+    func testRegistryTemperatureMatchingUsesLeafTokensInsteadOfTempSubstrings() {
+        let falseContext = RegistryServiceSnapshot(
+            name: "statistics",
+            serviceClass: "monitor",
+            path: "IOService:/Statistics",
+            properties: [
+                "Statistics": ["Number of failed attempts": 12],
+                "attemptCount": 4
+            ]
+        )
+        let genuine = RegistryServiceSnapshot(
+            name: "thermal-zone",
+            serviceClass: "AppleThermal",
+            path: "IOService:/CPU",
+            properties: [
+                "CPU Temperature": 71,
+                "DieTemp": 68,
+                "VirtualTemperature": 64
+            ]
+        )
+
+        let falseReadings = IORegistryThermalCollector.map(snapshots: [falseContext])
+        let genuineReadings = IORegistryThermalCollector.map(snapshots: [genuine])
+
+        XCTAssertTrue(falseReadings.isEmpty)
+        XCTAssertTrue(ThermalSummaryBuilder.build(from: falseReadings).isEmpty)
+        XCTAssertEqual(
+            Set(genuineReadings.map(\.label)),
+            Set(["CPU Temperature", "DieTemp", "VirtualTemperature"])
+        )
+    }
+
+    func testBatteryReadingWarningsMakeSourcePartialAndPreserveProviderWarnings() {
+        let collector = AppleSmartBatteryThermalCollector(provider: FixtureBatteryProvider(
+            batch: BatteryPropertyBatch(
+                propertySets: [BatteryPropertySet(
+                    source: .rootBattery,
+                    properties: ["Temperature": 2_000]
+                )],
+                discoveredServiceCount: 1,
+                scannedPropertyCount: 1,
+                warnings: ["provider warning"]
+            )
+        ))
+
+        let result = collector.collect(at: .distantPast)
+
+        XCTAssertEqual(result.readings.count, 1)
+        XCTAssertEqual(result.status.state, .partial)
+        XCTAssertTrue(result.status.warnings.contains("provider warning"))
+        XCTAssertTrue(result.status.warnings.contains { $0.contains("plausibility range") })
+    }
+
     private func value(_ identifier: String, in readings: [DetailedThermalReading]) throws -> Double {
         try XCTUnwrap(readings.first { $0.identifier == identifier }?.numericValue)
     }

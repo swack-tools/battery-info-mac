@@ -547,6 +547,19 @@ public struct PMSetThermalCollector: ThermalCollector {
                     start: start
                 )
             }
+            if !useful {
+                return ThermalCollectionResult(
+                    readings: [],
+                    status: ThermalSourceStatus(
+                        source: source,
+                        state: .unavailable,
+                        readingCount: 0,
+                        durationMilliseconds: elapsed(since: start),
+                        error: "pmset returned no recognizable thermal fields",
+                        scannedRecordCount: 0
+                    )
+                )
+            }
 
             let warnings = command.terminationStatus == 0
                 ? []
@@ -645,11 +658,21 @@ private func pressurePercentage(_ pressure: String?) -> Int {
 }
 
 private func throttleLevel(_ percentage: Int, pressure: String?) -> String {
-    if let pressure, !pressure.isEmpty { return normalizedTitle(pressure) }
-    if percentage >= 80 { return "Heavy" }
-    if percentage >= 40 { return "Moderate" }
-    if percentage > 0 { return "Light" }
-    return "Nominal"
+    let percentageLevel: String
+    if percentage >= 80 {
+        percentageLevel = "Heavy"
+    } else if percentage >= 40 {
+        percentageLevel = "Moderate"
+    } else if percentage > 0 {
+        percentageLevel = "Light"
+    } else {
+        percentageLevel = "Nominal"
+    }
+    guard let pressure, !pressure.isEmpty else { return percentageLevel }
+    let explicit = normalizedTitle(pressure)
+    return pressurePercentage(explicit) >= pressurePercentage(percentageLevel)
+        ? explicit
+        : percentageLevel
 }
 
 private func normalizedTitle(_ value: String) -> String {

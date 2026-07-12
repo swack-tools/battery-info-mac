@@ -164,15 +164,16 @@ public struct AppleSmartBatteryThermalCollector: ThermalCollector {
         let start = DispatchTime.now().uptimeNanoseconds
         do {
             let batch = try provider.propertyBatch()
-            let warnings = boundedWarnings(batch.warnings)
+            var warnings = batch.warnings
             guard batch.discoveredServiceCount > 0 else {
-                let state: ThermalSourceState = warnings.isEmpty ? .unavailable : .failed
+                let bounded = boundedWarnings(warnings)
+                let state: ThermalSourceState = bounded.isEmpty ? .unavailable : .failed
                 return statusResult(
                     state: state,
-                    error: warnings.isEmpty
+                    error: bounded.isEmpty
                         ? "AppleSmartBattery and AppleSmartBatteryPack were not found"
                         : "battery service lookup failed",
-                    warnings: warnings,
+                    warnings: bounded,
                     scanned: batch.scannedPropertyCount,
                     start: start
                 )
@@ -181,11 +182,15 @@ public struct AppleSmartBatteryThermalCollector: ThermalCollector {
             let readings = batch.propertySets.flatMap {
                 Self.map(properties: $0.properties, source: $0.source)
             }
+            warnings.append(contentsOf: readings.flatMap { reading in
+                reading.warnings.map { "\(reading.identifier): \($0)" }
+            })
+            let bounded = boundedWarnings(warnings)
             guard !readings.isEmpty else {
                 return statusResult(
                     state: .failed,
                     error: "battery services were found but no valid thermal properties were read",
-                    warnings: warnings,
+                    warnings: bounded,
                     scanned: batch.scannedPropertyCount,
                     start: start
                 )
@@ -194,7 +199,7 @@ public struct AppleSmartBatteryThermalCollector: ThermalCollector {
                 source: source,
                 readings: readings,
                 durationMilliseconds: elapsedMilliseconds(since: start),
-                warnings: warnings,
+                warnings: bounded,
                 scannedRecordCount: batch.scannedPropertyCount
             )
         } catch {
@@ -504,14 +509,16 @@ public struct IORegistryThermalCollector: ThermalCollector {
     }
 
     private static func isPressureProperty(_ value: String) -> Bool {
-        value.contains("thermalpressure")
-            || value.contains("thermal pressure")
-            || value.contains("thermalstate")
-            || value.contains("thermal state")
+        let leaf = value.split(separator: ".").last.map(String.init) ?? value
+        let normalized = leaf.components(separatedBy: CharacterSet.alphanumerics.inverted).joined()
+        return normalized == "thermalpressure" || normalized == "thermalstate"
     }
 
     private static func isTemperatureProperty(_ value: String) -> Bool {
-        value.contains("temperature") || value.contains("temp")
+        let leaf = value.split(separator: ".").last.map(String.init) ?? value
+        let normalized = leaf.components(separatedBy: CharacterSet.alphanumerics.inverted).joined()
+        return normalized == "temp" || normalized == "temperature"
+            || normalized.hasSuffix("temp") || normalized.hasSuffix("temperature")
     }
 
     private static func isRawOrControlProperty(_ value: String) -> Bool {

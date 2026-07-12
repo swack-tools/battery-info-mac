@@ -65,9 +65,13 @@ public struct ThermalCaptureCoordinator: Sendable {
             })
             return pressures
         }
-        let pressure = explicitPressures.max { lhs, rhs in
+        var pressureCandidates = explicitPressures
+        if throttling.percentage > 0 {
+            pressureCandidates.append(throttling.level)
+        }
+        let pressure = pressureCandidates.max { lhs, rhs in
             pressureRank(lhs) < pressureRank(rhs)
-        } ?? (throttling.percentage > 0 ? throttling.level : nil)
+        }
 
         return ThermalSnapshot(
             generatedAt: generatedAt,
